@@ -1,0 +1,851 @@
+// IRIS CRM Platform — Prisma schema
+// Phase 1 (Identity/RBAC) + Phase 2 (Sales module) per planning/Sales_Module_Requirements.docx
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Identity & RBAC
+// ---------------------------------------------------------------------------
+
+enum Role {
+  SUPER_ADMIN
+  REGIONAL_ADMIN
+  SALES_MANAGER
+  SALES_EXECUTIVE
+  AUDITOR
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum PermissionEffect {
+  GRANT
+  DENY
+}
+
+model Region {
+  id        String   @id @default(cuid())
+  code      String   @unique // e.g. GGN, DL
+  name      String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  users             User[]
+  customers         Customer[]
+  leads             Lead[]
+  opportunities     Opportunity[]
+  quotations        Quotation[]
+  catalogPriceRules PriceRule[]
+  amcContracts      AmcContract[]
+  projects          Project[]
+  departments       Department[]
+  salesQueries      SalesQuery[]
+
+  @@map("regions")
+}
+
+model User {
+  id            String     @id
+  name          String
+  email         String     @unique
+  passwordHash  String
+  role          Role
+  regionId      String
+  region        Region     @relation(fields: [regionId], references: [id])
+  reportingToId String?
+  reportingTo   User?      @relation("UserReportsTo", fields: [reportingToId], references: [id])
+  reports       User[]     @relation("UserReportsTo")
+  status        UserStatus @default(ACTIVE)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  permissionOverrides        UserPermissionOverride[] @relation("OverrideOwner")
+  grantedPermissionOverrides UserPermissionOverride[] @relation("OverrideGrantedBy")
+
+  ownedLeads         Lead[]        @relation("LeadOwner")
+  ownedOpportunities Opportunity[] @relation("OpportunityOwner")
+
+  departmentMemberships DepartmentMember[]
+  ownedSalesQueries     SalesQuery[]       @relation("SalesQueryOwner")
+  assignedSalesQueries  SalesQuery[]       @relation("SalesQueryAssignedTo")
+  assignedFollowUps     QueryFollowUp[]    @relation("FollowUpAssignee")
+  createdFollowUps      QueryFollowUp[]    @relation("FollowUpCreator")
+  queryComments         QueryComment[]
+  queryActivities       QueryActivity[]
+  notifications         Notification[]
+  entityComments        EntityComment[]
+
+  @@index([regionId])
+  @@map("users")
+}
+
+// Default permission set per role (Section 3.2 permission matrix), configurable without a redeploy.
+model RolePermission {
+  id            String   @id @default(cuid())
+  role          Role
+  permissionKey String
+  createdAt     DateTime @default(now())
+
+  @@unique([role, permissionKey])
+  @@map("role_permissions")
+}
+
+// Per-user overrides on top of role defaults — the feature-level permission override system.
+model UserPermissionOverride {
+  id            String           @id @default(cuid())
+  userId        String
+  user          User             @relation("OverrideOwner", fields: [userId], references: [id])
+  permissionKey String
+  effect        PermissionEffect
+  grantedById   String
+  grantedBy     User             @relation("OverrideGrantedBy", fields: [grantedById], references: [id])
+  reason        String?
+  expiresAt     DateTime?
+  createdAt     DateTime         @default(now())
+
+  @@unique([userId, permissionKey])
+  @@index([userId])
+  @@map("user_permission_overrides")
+}
+
+// ---------------------------------------------------------------------------
+// Sales — shared master data
+// ---------------------------------------------------------------------------
+
+model Customer {
+  id        String    @id
+  name      String
+  type      String // e.g. Individual, Business
+  active    Boolean   @default(true)
+  contacts  Json? // [{name, phone, email}]
+  addresses Json? // [{line1, city, state, pincode}]
+  regionId  String
+  region    Region    @relation(fields: [regionId], references: [id])
+  createdBy String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  leads        Lead[]
+  amcContracts AmcContract[]
+  projects     Project[]
+  salesQueries SalesQuery[]
+
+  @@index([regionId])
+  @@map("customers")
+}
+
+// ---------------------------------------------------------------------------
+// Admin-managed picklists (Source, Product Interest, ...) — Regional/Super
+// Admin maintain the option lists; every other role only reads active ones.
+// ---------------------------------------------------------------------------
+
+enum PicklistType {
+  LEAD_SOURCE
+  PRODUCT_INTEREST
+}
+
+model PicklistOption {
+  id        String       @id @default(cuid())
+  listType  PicklistType
+  code      String
+  label     String
+  active    Boolean      @default(true)
+  sortOrder Int          @default(0)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@unique([listType, code])
+  @@index([listType, active])
+  @@map("picklist_options")
+}
+
+// ---------------------------------------------------------------------------
+// Sales — Leads (SM-1.x)
+// ---------------------------------------------------------------------------
+
+enum LeadStatus {
+  NEW
+  QUALIFIED
+  LOST
+}
+
+model Lead {
+  id              String     @id
+  refNo           String     @unique // region-prefixed, e.g. GGN-L-000123
+  customerId      String?
+  customer        Customer?  @relation(fields: [customerId], references: [id])
+  contactName     String
+  companyName     String?
+  contactPhone    String?
+  contactEmail    String?
+  gpsLatitude     Decimal?   @db.Decimal(10, 7)
+  gpsLongitude    Decimal?   @db.Decimal(10, 7)
+  source          String
+  productInterest String?
+  notes           String?
+  status          LeadStatus @default(NEW)
+  lostReason      String?
+  regionId        String
+  region          Region     @relation(fields: [regionId], references: [id])
+  ownerId         String
+  owner           User       @relation("LeadOwner", fields: [ownerId], references: [id])
+  createdBy       String
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  deletedAt       DateTime?
+
+  followUps          LeadFollowUp[]
+  opportunity        Opportunity?
+  convertedFromQuery SalesQuery?
+
+  @@index([regionId])
+  @@index([contactPhone])
+  @@index([contactEmail])
+  @@map("leads")
+}
+
+// SM-1.9 / SM-1.10 — follow-up log with next-action reminder
+model LeadFollowUp {
+  id           String    @id @default(cuid())
+  leadId       String
+  lead         Lead      @relation(fields: [leadId], references: [id])
+  note         String
+  channel      String // call | meeting | email
+  nextActionAt DateTime?
+  createdBy    String
+  createdAt    DateTime  @default(now())
+
+  @@index([leadId])
+  @@index([nextActionAt])
+  @@map("lead_follow_ups")
+}
+
+// ---------------------------------------------------------------------------
+// Sales — Pipeline (SM-2.x)
+// ---------------------------------------------------------------------------
+
+enum DealType {
+  INSTALLATION
+  AMC
+  PRODUCT
+}
+
+enum OpportunityStage {
+  NEW
+  CONTACTED
+  QUOTED
+  NEGOTIATION
+  WON
+  LOST
+}
+
+model Opportunity {
+  id            String           @id @default(cuid())
+  leadId        String           @unique
+  lead          Lead             @relation(fields: [leadId], references: [id])
+  dealType      DealType
+  value         Decimal          @db.Decimal(14, 2)
+  stage         OpportunityStage @default(NEW)
+  probability   Int              @default(10) // % — configurable per stage
+  expectedClose DateTime?
+  lostReason    String?
+  wonAt         DateTime?
+  regionId      String
+  region        Region           @relation(fields: [regionId], references: [id])
+  ownerId       String
+  owner         User             @relation("OpportunityOwner", fields: [ownerId], references: [id])
+  createdBy     String
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  deletedAt     DateTime?
+
+  stageHistory       OpportunityStageHistory[]
+  quotations         Quotation[]
+  amcContract        AmcContract?
+  project            Project?
+  convertedFromQuery SalesQuery?
+
+  @@index([regionId])
+  @@index([ownerId])
+  @@map("opportunities")
+}
+
+// SM-2.2 — immutable audit trail of stage transitions
+model OpportunityStageHistory {
+  id            String            @id @default(cuid())
+  opportunityId String
+  opportunity   Opportunity       @relation(fields: [opportunityId], references: [id])
+  fromStage     OpportunityStage?
+  toStage       OpportunityStage
+  remark        String?
+  actorId       String
+  createdAt     DateTime          @default(now())
+
+  @@index([opportunityId])
+  @@map("opportunity_stage_history")
+}
+
+// ---------------------------------------------------------------------------
+// Sales — Catalog & Pricing (SM-6.x)
+// ---------------------------------------------------------------------------
+
+model CatalogItem {
+  id        String    @id
+  code      String    @unique
+  name      String
+  category  String
+  unit      String
+  basePrice Decimal   @db.Decimal(14, 2)
+  taxClass  String
+  active    Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  priceRules     PriceRule[]
+  quotationLines QuotationLine[]
+
+  @@map("catalog_items")
+}
+
+enum PriceRuleType {
+  REGION_OVERRIDE
+  VOLUME_SLAB
+  CUSTOMER_TIER
+  PROMOTIONAL
+}
+
+model PriceRule {
+  id            String        @id @default(cuid())
+  catalogItemId String
+  catalogItem   CatalogItem   @relation(fields: [catalogItemId], references: [id])
+  regionId      String?
+  region        Region?       @relation(fields: [regionId], references: [id])
+  ruleType      PriceRuleType
+  value         Decimal       @db.Decimal(14, 2) // absolute price or discount, per ruleType
+  effectiveFrom DateTime
+  effectiveTo   DateTime?
+  createdAt     DateTime      @default(now())
+
+  @@index([catalogItemId])
+  @@map("price_rules")
+}
+
+// ---------------------------------------------------------------------------
+// Sales — Quotations (SM-3.x)
+// ---------------------------------------------------------------------------
+
+enum QuotationStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  SENT
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
+model Quotation {
+  id            String          @id @default(cuid())
+  opportunityId String
+  opportunity   Opportunity     @relation(fields: [opportunityId], references: [id])
+  version       Int
+  status        QuotationStatus @default(DRAFT)
+  subtotal      Decimal         @db.Decimal(14, 2)
+  discountTotal Decimal         @default(0) @db.Decimal(14, 2)
+  taxTotal      Decimal         @default(0) @db.Decimal(14, 2)
+  grandTotal    Decimal         @db.Decimal(14, 2)
+  validTill     DateTime?
+  approvedById  String?
+  approvedAt    DateTime?
+  regionId      String
+  region        Region          @relation(fields: [regionId], references: [id])
+  createdBy     String
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  lines QuotationLine[]
+
+  @@unique([opportunityId, version])
+  @@index([opportunityId])
+  @@map("quotations")
+}
+
+model QuotationLine {
+  id            String       @id @default(cuid())
+  quotationId   String
+  quotation     Quotation    @relation(fields: [quotationId], references: [id])
+  catalogItemId String?
+  catalogItem   CatalogItem? @relation(fields: [catalogItemId], references: [id])
+  description   String
+  qty           Decimal      @db.Decimal(10, 2)
+  unitPrice     Decimal      @db.Decimal(14, 2)
+  discount      Decimal      @default(0) @db.Decimal(14, 2)
+  tax           Decimal      @default(0) @db.Decimal(14, 2)
+  lineTotal     Decimal      @db.Decimal(14, 2)
+
+  @@index([quotationId])
+  @@map("quotation_lines")
+}
+
+// ---------------------------------------------------------------------------
+// Sales — AMC hand-off (SM-4.x). Owned by Sales until Active; AMC Management
+// Module takes over service-ticket scheduling after activation (Section 8).
+// ---------------------------------------------------------------------------
+
+enum AmcType {
+  COMPREHENSIVE
+  NON_COMPREHENSIVE
+}
+
+enum AmcFrequency {
+  MONTHLY
+  QUARTERLY
+  ANNUAL
+}
+
+enum AmcStatus {
+  DRAFT
+  ACTIVE
+  EXPIRED
+  RENEWED
+  CANCELLED
+}
+
+model AmcContract {
+  id            String       @id @default(cuid())
+  opportunityId String       @unique
+  opportunity   Opportunity  @relation(fields: [opportunityId], references: [id])
+  customerId    String?
+  customer      Customer?    @relation(fields: [customerId], references: [id])
+  type          AmcType
+  frequency     AmcFrequency
+  startDate     DateTime
+  endDate       DateTime
+  value         Decimal      @db.Decimal(14, 2)
+  status        AmcStatus    @default(DRAFT)
+  regionId      String
+  region        Region       @relation(fields: [regionId], references: [id])
+  createdBy     String
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@index([regionId])
+  @@index([endDate])
+  @@map("amc_contracts")
+}
+
+// ---------------------------------------------------------------------------
+// Sales — New Installation Project hand-off (SM-5.x). Minimal placeholder;
+// full lifecycle ownership moves to the Project Module once it exists.
+// ---------------------------------------------------------------------------
+
+enum ProjectStatus {
+  PENDING
+  HANDED_OFF
+}
+
+model Project {
+  id            String        @id @default(cuid())
+  opportunityId String        @unique
+  opportunity   Opportunity   @relation(fields: [opportunityId], references: [id])
+  customerId    String?
+  customer      Customer?     @relation(fields: [customerId], references: [id])
+  site          String?
+  bom           Json? // bill of materials snapshot from catalog at Won time
+  timeline      String?
+  status        ProjectStatus @default(PENDING)
+  regionId      String
+  region        Region        @relation(fields: [regionId], references: [id])
+  createdBy     String
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([regionId])
+  @@map("projects")
+}
+
+// ---------------------------------------------------------------------------
+// Sales — Query Management (Jira-style CRM ticketing, Phase 1)
+// ---------------------------------------------------------------------------
+
+enum DepartmentMemberRole {
+  MANAGER
+  EMPLOYEE
+}
+
+model Department {
+  id        String    @id @default(cuid())
+  code      String    @unique // e.g. TECH, PROCUREMENT, FINANCE
+  name      String
+  regionId  String? // null = cross-region/shared department
+  region    Region?   @relation(fields: [regionId], references: [id])
+  active    Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  members      DepartmentMember[]
+  salesQueries SalesQuery[]
+
+  @@index([regionId])
+  @@map("departments")
+}
+
+model DepartmentMember {
+  id           String               @id @default(cuid())
+  departmentId String
+  department   Department           @relation(fields: [departmentId], references: [id])
+  userId       String
+  user         User                 @relation(fields: [userId], references: [id])
+  roleInDept   DepartmentMemberRole @default(EMPLOYEE)
+  createdAt    DateTime             @default(now())
+
+  @@unique([departmentId, userId])
+  @@index([userId])
+  @@map("department_members")
+}
+
+enum MeetingType {
+  WALK_IN
+  SCHEDULED
+  REFERRAL
+}
+
+enum QueryPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum SalesQueryStatus {
+  NEW
+  ASSIGNED
+  UNDER_REVIEW
+  WAITING_FOR_CUSTOMER
+  WAITING_FOR_INTERNAL_TEAM
+  QUOTATION_PREPARATION
+  QUOTATION_PREPARED
+  QUOTATION_SENT
+  NEGOTIATION
+  WON
+  LOST
+  CANCELLED
+  CLOSED
+}
+
+enum FollowUpStatus {
+  PENDING
+  COMPLETED
+  RESCHEDULED
+  OVERDUE
+  CANCELLED
+}
+
+model SalesQuery {
+  id    String @id @default(cuid())
+  refNo String @unique // region-agnostic, year-scoped e.g. SAL-2026-00152
+
+  // Customer info
+  customerId   String?
+  customer     Customer? @relation(fields: [customerId], references: [id])
+  customerName String
+  companyName  String?
+  contactPhone String?
+  contactEmail String?
+  address      String?
+  gstNumber    String?
+  city         String?
+
+  // Visit / interaction info
+  meetingType   MeetingType
+  visitDate     DateTime?
+  visitLocation String?
+  gpsLatitude   Decimal?    @db.Decimal(10, 7)
+  gpsLongitude  Decimal?    @db.Decimal(10, 7)
+
+  // Requirement details
+  subject              String?
+  requirement          String
+  priority             QueryPriority @default(MEDIUM)
+  productInterest      String?
+  quantity             Int?
+  budget               Decimal?      @db.Decimal(14, 2)
+  estimatedValue       Decimal?      @db.Decimal(14, 2)
+  expectedDeliveryDate DateTime?
+  dueDate              DateTime?
+  tags                 Json? // ["hot-lead","cctv","corporate"]
+  labels               Json? // Custom labels
+
+  // Workflow / ownership
+  status       SalesQueryStatus @default(NEW)
+  closeReason  String?
+  departmentId String?
+  department   Department?      @relation(fields: [departmentId], references: [id])
+  regionId     String
+  region       Region           @relation(fields: [regionId], references: [id])
+  ownerId      String
+  owner        User             @relation("SalesQueryOwner", fields: [ownerId], references: [id])
+  assignedToId String? // individual employee assignment
+  assignedTo   User?            @relation("SalesQueryAssignedTo", fields: [assignedToId], references: [id])
+
+  // SLA tracking
+  slaDeadline DateTime?
+  slaBreached Boolean   @default(false)
+
+  // Optional forward-compat hand-off — unused in Phase 1 service code.
+  convertedLeadId        String?      @unique
+  convertedLead          Lead?        @relation(fields: [convertedLeadId], references: [id])
+  convertedOpportunityId String?      @unique
+  convertedOpportunity   Opportunity? @relation(fields: [convertedOpportunityId], references: [id])
+
+  createdBy String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  comments    QueryComment[]
+  attachments QueryAttachment[]
+  activities  QueryActivity[]
+  followUps   QueryFollowUp[]
+
+  @@index([regionId])
+  @@index([departmentId])
+  @@index([ownerId])
+  @@index([assignedToId])
+  @@index([status])
+  @@index([priority])
+  @@index([dueDate])
+  @@index([createdAt])
+  @@map("sales_queries")
+}
+
+enum CommentEntityType {
+  LEAD
+  OPPORTUNITY
+}
+
+// Lightweight, non-threaded comment thread shared by Leads and Opportunities —
+// same soft-delete/edit-lock conventions as QueryComment, without the
+// pinning/reactions/threading/attachments that sales queries alone need.
+model EntityComment {
+  id         String            @id @default(cuid())
+  entityType CommentEntityType
+  entityId   String
+
+  body             String
+  isInternalNote   Boolean  @default(false)
+  mentionedUserIds String[] @default([])
+
+  authorId  String
+  author    User      @relation(fields: [authorId], references: [id])
+  edited    Boolean   @default(false)
+  editedAt  DateTime?
+  deleted   Boolean   @default(false)
+  deletedAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([authorId])
+  @@map("entity_comments")
+}
+
+// Append-only comment thread — never hard-deleted, matching the spec's
+// "nothing should be deleted from history" rule for the whole module.
+model QueryComment {
+  id      String     @id @default(cuid())
+  queryId String
+  query   SalesQuery @relation(fields: [queryId], references: [id])
+
+  parentId String?
+  parent   QueryComment?  @relation("CommentReplies", fields: [parentId], references: [id])
+  replies  QueryComment[] @relation("CommentReplies")
+
+  body             String
+  isInternalNote   Boolean   @default(false)
+  mentionedUserIds String[]  @default([])
+  isPinned         Boolean   @default(false)
+  pinnedAt         DateTime?
+  pinnedBy         String?
+  emojiReactions   Json? // { "👍": ["user1","user2"], "🎉": ["user3"] }
+
+  authorId  String
+  author    User      @relation(fields: [authorId], references: [id])
+  edited    Boolean   @default(false)
+  editedAt  DateTime?
+  deleted   Boolean   @default(false)
+  deletedAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  attachments QueryAttachment[]
+
+  @@index([queryId])
+  @@index([parentId])
+  @@index([authorId])
+  @@map("query_comments")
+}
+
+model QueryAttachment {
+  id        String        @id @default(cuid())
+  queryId   String
+  query     SalesQuery    @relation(fields: [queryId], references: [id])
+  commentId String?
+  comment   QueryComment? @relation(fields: [commentId], references: [id])
+
+  fileName   String
+  mimeType   String
+  sizeBytes  Int
+  storageKey String
+
+  uploadedBy String
+  createdAt  DateTime  @default(now())
+  deletedAt  DateTime?
+
+  @@index([queryId])
+  @@index([commentId])
+  @@map("query_attachments")
+}
+
+// Dedicated per-module timeline (mirrors OpportunityStageHistory), not a reuse
+// of the generic ActivityLog — this needs typed fromStatus/toStatus columns
+// and is queried directly per query, unlike the single-use generic log.
+model QueryActivity {
+  id         String            @id @default(cuid())
+  queryId    String
+  query      SalesQuery        @relation(fields: [queryId], references: [id])
+  actorId    String
+  actor      User              @relation(fields: [actorId], references: [id])
+  action     String // CREATED | ASSIGNED | OWNER_CHANGED | STATUS_CHANGED | COMMENT_ADDED | ATTACHMENT_ADDED | REASSIGNED | FOLLOW_UP_ADDED | FOLLOW_UP_COMPLETED | PRIORITY_CHANGED | DUE_DATE_UPDATED
+  fromStatus SalesQueryStatus?
+  toStatus   SalesQueryStatus?
+  fromValue  String? // previous value (for generic changes: priority, owner, dept)
+  toValue    String? // new value (for generic changes: priority, owner, dept)
+  field      String? // which field changed: status | priority | owner | department | dueDate | assignedTo
+  remark     String?
+  createdAt  DateTime          @default(now())
+
+  @@index([queryId])
+  @@index([actorId])
+  @@map("query_activities")
+}
+
+// Follow-up Management — scheduled interactions with full audit
+model QueryFollowUp {
+  id               String         @id @default(cuid())
+  queryId          String
+  query            SalesQuery     @relation(fields: [queryId], references: [id])
+  title            String
+  note             String?
+  scheduledAt      DateTime
+  reminderMinutes  Int? // Number of minutes before scheduledAt to send a reminder
+  status           FollowUpStatus @default(PENDING)
+  channel          String? // call | meeting | email | whatsapp | on_site
+  customerResponse String?
+  outcome          String?
+  completedAt      DateTime?
+  rescheduledFrom  String?
+  rescheduledCount Int            @default(0)
+
+  createdBy     String
+  createdByUser User      @relation("FollowUpCreator", fields: [createdBy], references: [id])
+  assignedToId  String?
+  assignedTo    User?     @relation("FollowUpAssignee", fields: [assignedToId], references: [id])
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  @@index([queryId])
+  @@index([scheduledAt])
+  @@index([status])
+  @@index([assignedToId])
+  @@map("query_follow_ups")
+}
+
+enum NotificationType {
+  QUERY_CREATED
+  QUERY_ASSIGNED
+  QUERY_STATUS_CHANGED
+  QUERY_COMMENT_ADDED
+  QUERY_MENTIONED
+  QUERY_CLOSED
+  QUERY_PRIORITY_CHANGED
+  FOLLOW_UP_DUE
+  FOLLOW_UP_OVERDUE
+  QUERY_ATTACHMENT_UPLOADED
+  QUERY_DUE_DATE_UPDATED
+}
+
+model Notification {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  type       NotificationType
+  entityType String // "SalesQuery" | "QueryComment"
+  entityId   String
+  title      String
+  body       String?
+  readAt     DateTime?
+  createdAt  DateTime         @default(now())
+
+  @@index([userId, readAt])
+  @@index([entityType, entityId])
+  @@map("notifications")
+}
+
+// ---------------------------------------------------------------------------
+// Cross-cutting — append-only immutable audit trail with device/browser/IP
+// ---------------------------------------------------------------------------
+
+model ActivityLog {
+  id         String   @id @default(cuid())
+  entityType String // SalesQuery | QueryComment | QueryFollowUp | User | ...
+  entityId   String
+  action     String // CREATE | UPDATE | DELETE | STATUS_CHANGE | ASSIGN | VIEW | DOWNLOAD
+  actorId    String
+  actorRole  String?
+  remark     String?
+  // Generic change-tracking (JSON avoids nullable column explosion)
+  fromValue  Json?
+  toValue    Json?
+  field      String?
+  // Immutable security context — never updated after insert
+  ipAddress  String?
+  userAgent  String?
+  device     String?
+  browser    String?
+  city       String?
+  regionLoc  String?
+  country    String?
+  latitude   Decimal? @db.Decimal(10, 7)
+  longitude  Decimal? @db.Decimal(10, 7)
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([actorId])
+  @@index([createdAt])
+  @@map("activity_log")
+}
+
+// ---------------------------------------------------------------------------
+// ID Generation Sequences
+// ---------------------------------------------------------------------------
+model Sequence {
+  id        String @id // e.g. 'USER', 'LEAD', 'CATALOG'
+  nextValue Int    @default(1)
+
+  @@map("sequences")
+}
