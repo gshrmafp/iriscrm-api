@@ -48,6 +48,15 @@ export const leadRepository = {
     return { items, total, page, pageSize, totalPages: Math.ceil(total / pageSize) };
   },
 
+  async statusSummary(scopeWhere: { regionId?: string; ownerId?: string }, ownerId?: string) {
+    const where: Prisma.LeadWhereInput = { ...scopeWhere, deletedAt: null };
+    // Same override guard as list(): an owner-scoped caller can't widen past their own leads.
+    if (ownerId && !scopeWhere.ownerId) where.ownerId = ownerId;
+
+    const grouped = await prisma.lead.groupBy({ by: ['status'], where, _count: { _all: true } });
+    return grouped.map((g) => ({ status: g.status, count: g._count._all }));
+  },
+
   findById(id: string) {
     return prisma.lead.findFirst({
       where: { id, deletedAt: null },
@@ -82,10 +91,14 @@ export const leadRepository = {
         companyName: data.companyName,
         contactPhone: data.contactPhone,
         contactEmail: data.contactEmail,
+        address: data.address,
         gpsLatitude: data.gpsLatitude,
         gpsLongitude: data.gpsLongitude,
+        visitLocation: data.visitLocation,
         source: data.source,
+        sourceOther: data.sourceOther,
         productInterest: data.productInterest,
+        productInterestOther: data.productInterestOther,
         notes: data.notes,
         regionId: data.regionId,
         ownerId: data.ownerId,

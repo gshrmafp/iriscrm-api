@@ -188,11 +188,15 @@ model Lead {
   companyName     String?
   contactPhone    String?
   contactEmail    String?
+  address         String? // manually entered — the contact/company's address
   gpsLatitude     Decimal?   @db.Decimal(10, 7)
   gpsLongitude    Decimal?   @db.Decimal(10, 7)
+  visitLocation   String? // reverse-geocoded label for gpsLatitude/gpsLongitude
   source          String
+  sourceOther     String? // free-text detail when source's picklist code is OTHER
   productInterest String?
-  notes           String?
+  productInterestOther String? // free-text detail when productInterest's picklist code is OTHER
+  notes           String? // max 400 chars, enforced by createLeadSchema/updateLeadSchema
   status          LeadStatus @default(NEW)
   lostReason      String?
   regionId        String

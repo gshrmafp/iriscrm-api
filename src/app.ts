@@ -16,6 +16,7 @@ import { salesQueryRouter } from './modules/sales/queries/routes';
 import { departmentRouter } from './modules/departments/routes';
 import { notificationRouter } from './modules/notifications/routes';
 import { picklistRouter } from './modules/picklists/routes';
+import { geoRouter } from './modules/geo/routes';
 
 export function createApp() {
   const app = express();
@@ -41,6 +42,7 @@ export function createApp() {
   v1.use(departmentRouter);
   v1.use(notificationRouter);
   v1.use(picklistRouter);
+  v1.use(geoRouter);
   app.use('/api/v1', v1);
 
   app.use(notFoundMiddleware);

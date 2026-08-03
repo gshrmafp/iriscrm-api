@@ -9,6 +9,7 @@ import { leadController } from './controller';
 import {
   addFollowUpSchema,
   createLeadSchema,
+  leadStatusSummaryQuerySchema,
   listLeadsQuerySchema,
   markLostSchema,
   qualifyLeadSchema,
@@ -35,17 +36,21 @@ export const leadRouter = Router();
  *               companyName: { type: string }
  *               contactPhone: { type: string, example: "9999999999", description: "10-digit Indian mobile number, optional +91/0 prefix" }
  *               contactEmail: { type: string, example: "buyer@acme.com" }
+ *               address: { type: string, description: "Contact/company address, max 500 characters" }
  *               gpsLatitude: { type: number, example: 28.4595 }
  *               gpsLongitude: { type: number, example: 77.0266 }
+ *               visitLocation: { type: string, description: "Reverse-geocoded label for gpsLatitude/gpsLongitude" }
  *               source:
  *                 type: string
  *                 description: Code of an active Lead Source picklist option (GET /picklists?listType=LEAD_SOURCE) — admin-managed, not a fixed enum.
  *                 example: "WEB_FORM"
+ *               sourceOther: { type: string, description: "Required when source is OTHER" }
  *               productInterest:
  *                 type: string
  *                 description: Code of an active Product Interest picklist option (GET /picklists?listType=PRODUCT_INTEREST), optional.
  *                 example: "CCTV_INSTALLATION"
- *               notes: { type: string }
+ *               productInterestOther: { type: string, description: "Required when productInterest is OTHER" }
+ *               notes: { type: string, description: "Max 400 characters" }
  *               regionId: { type: string, description: "Admin override only" }
  *               ownerId: { type: string, description: "Defaults to the creator" }
  *     responses:
@@ -106,6 +111,29 @@ leadRouter.get(
   requirePermission(PERMISSIONS.SALES_LEAD_VIEW),
   validateQuery(listLeadsQuerySchema),
   asyncHandler(leadController.list),
+);
+
+/**
+ * @openapi
+ * /leads/status-summary:
+ *   get:
+ *     summary: Per-status lead counts visible to the caller, optionally narrowed to one owner (admin "leads by user" view)
+ *     tags: [Leads]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: ownerId
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: "Array of { status, count }"
+ */
+leadRouter.get(
+  '/leads/status-summary',
+  requireAuth,
+  requirePermission(PERMISSIONS.SALES_LEAD_VIEW),
+  validateQuery(leadStatusSummaryQuerySchema),
+  asyncHandler(leadController.statusSummary),
 );
 
 /**

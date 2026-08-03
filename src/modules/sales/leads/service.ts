@@ -15,6 +15,14 @@ function canViewAllLeadsInRegion(role: string) {
   return role === 'SUPER_ADMIN' || role === 'REGIONAL_ADMIN' || role === 'SALES_MANAGER';
 }
 
+function buildLeadScopeWhere(actor: AuthUser) {
+  return CROSS_REGION_ROLES.includes(actor.role)
+    ? {}
+    : canViewAllLeadsInRegion(actor.role)
+      ? { regionId: actor.regionId }
+      : { regionId: actor.regionId, ownerId: actor.id };
+}
+
 async function loadOwnedOrThrow(id: string, actor: AuthUser) {
   const lead = await leadRepository.findById(id);
   if (!lead) throw new NotFoundError('Lead not found');
@@ -32,6 +40,12 @@ export const leadService = {
     await picklistService.assertActiveOption(PicklistType.LEAD_SOURCE, input.source);
     if (input.productInterest) {
       await picklistService.assertActiveOption(PicklistType.PRODUCT_INTEREST, input.productInterest);
+    }
+    if (input.source === 'OTHER' && !input.sourceOther?.trim()) {
+      throw new BadRequestError('Please specify the lead source');
+    }
+    if (input.productInterest === 'OTHER' && !input.productInterestOther?.trim()) {
+      throw new BadRequestError('Please specify the product of interest');
     }
 
     let regionId = actor.regionId;
@@ -57,12 +71,13 @@ export const leadService = {
   },
 
   async list(actor: AuthUser, filters: ListLeadsQuery) {
-    const where = CROSS_REGION_ROLES.includes(actor.role)
-      ? {}
-      : canViewAllLeadsInRegion(actor.role)
-        ? { regionId: actor.regionId }
-        : { regionId: actor.regionId, ownerId: actor.id };
-    return leadRepository.list(where, filters);
+    return leadRepository.list(buildLeadScopeWhere(actor), filters);
+  },
+
+  // Per-status lead counts, optionally narrowed to one owner — powers the
+  // "how many leads has this rep worked, and what's their status" admin view.
+  async statusSummary(actor: AuthUser, ownerId?: string) {
+    return leadRepository.statusSummary(buildLeadScopeWhere(actor), ownerId);
   },
 
   async get(id: string, actor: AuthUser) {

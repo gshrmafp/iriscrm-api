@@ -734,6 +734,7 @@ async function main() {
     { code: 'PHONE_IN', label: 'Phone-in', sortOrder: 3 },
     { code: 'REFERRAL', label: 'Referral', sortOrder: 4 },
     { code: 'EXISTING_CUSTOMER', label: 'Existing customer', sortOrder: 5 },
+    { code: 'OTHER', label: 'Other', sortOrder: 99 },
   ];
   const productInterestOptions = [
     { code: 'CCTV_INSTALLATION', label: 'CCTV Installation', sortOrder: 1 },
