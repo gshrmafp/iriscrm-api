@@ -5,8 +5,9 @@ import {
   ForbiddenError,
   NotFoundError,
 } from "../../../core/errors/AppError";
-import { CROSS_REGION_ROLES } from "../../../config/permissions";
+import { CROSS_REGION_ROLES, PERMISSIONS } from "../../../config/permissions";
 import { assertSameRegionOrElevated } from "../../../core/rbac/regionScope";
+import { hasPermission } from "../../../core/rbac/effectivePermissions";
 import { eventBus, DOMAIN_EVENTS } from "../../../core/events/eventBus";
 import { storage } from "../../../core/storage";
 import { identityRepository } from "../../identity/repository";
@@ -31,29 +32,42 @@ function canManageAllQueries(role: Role) {
   return role === Role.SUPER_ADMIN || role === Role.REGIONAL_ADMIN;
 }
 
-async function loadVisibleOrThrow(id: string, actor: AuthUser) {
-  const query = await queryRepository.findById(id);
-  if (!query) throw new NotFoundError("Sales query not found");
-  assertSameRegionOrElevated(actor, query.regionId);
+type VisibilityScope = {
+  regionId: string;
+  ownerId: string;
+  assignedToId: string | null;
+  departmentId: string | null;
+};
 
-  if (canManageAllQueries(actor.role) || query.ownerId === actor.id)
-    return query;
-  if (query.assignedToId === actor.id) return query;
+async function isVisible(scope: VisibilityScope, actor: AuthUser) {
+  assertSameRegionOrElevated(actor, scope.regionId);
+
+  if (canManageAllQueries(actor.role) || scope.ownerId === actor.id)
+    return true;
+  if (scope.assignedToId === actor.id) return true;
 
   if (actor.role === Role.SALES_MANAGER) {
     const reportIds = await identityRepository.listDirectReportIds(actor.id);
-    if (reportIds.includes(query.ownerId)) return query;
+    if (reportIds.includes(scope.ownerId)) return true;
   }
 
-  if (query.departmentId) {
+  if (scope.departmentId) {
     const membership = await departmentRepository.findMembership(
-      query.departmentId,
+      scope.departmentId,
       actor.id,
     );
-    if (membership) return query;
+    if (membership) return true;
   }
 
-  throw new ForbiddenError("You do not have access to this sales query");
+  return false;
+}
+
+async function loadVisibleOrThrow(id: string, actor: AuthUser) {
+  const query = await queryRepository.findById(id);
+  if (!query) throw new NotFoundError("Sales query not found");
+  if (!(await isVisible(query, actor)))
+    throw new ForbiddenError("You do not have access to this sales query");
+  return query;
 }
 
 async function assertDepartmentAuthorized(
@@ -189,6 +203,14 @@ export const queryService = {
     return loadVisibleOrThrow(id, actor);
   },
 
+  async getComments(id: string, actor: AuthUser) {
+    const scope = await queryRepository.findVisibilityScope(id);
+    if (!scope) throw new NotFoundError("Sales query not found");
+    if (!(await isVisible(scope, actor)))
+      throw new ForbiddenError("You do not have access to this sales query");
+    return queryRepository.findCommentsForQuery(id);
+  },
+
   async update(id: string, actor: AuthUser, input: UpdateSalesQueryInput) {
     const query = await loadVisibleOrThrow(id, actor);
     if (["WON", "LOST", "CANCELLED", "CLOSED"].includes(query.status)) {
@@ -206,6 +228,13 @@ export const queryService = {
         input.priority,
         actor.id,
       );
+      eventBus.publish(DOMAIN_EVENTS.SALES_QUERY_PRIORITY_CHANGED, {
+        queryId: id,
+        fromPriority: query.priority,
+        toPriority: input.priority,
+        actorId: actor.id,
+        ownerId: query.ownerId,
+      });
       const { priority, ...rest } = input;
       if (Object.keys(rest).length === 0) {
         return queryRepository.findById(id);
@@ -220,6 +249,11 @@ export const queryService = {
       const oldDue = (query as any).dueDate ?? null;
       if (String(newDue) !== String(oldDue)) {
         await queryRepository.updateDueDate(id, oldDue, newDue, actor.id);
+        eventBus.publish(DOMAIN_EVENTS.SALES_QUERY_DUE_DATE_UPDATED, {
+          queryId: id,
+          actorId: actor.id,
+          ownerId: query.ownerId,
+        });
         const { dueDate, ...rest } = input as any;
         if (Object.keys(rest).length === 0) {
           return queryRepository.findById(id);
@@ -379,8 +413,9 @@ export const queryService = {
   },
 
   // Comments are a permanent audit trail once posted — not even the author
-  // may edit or delete their own comment. Only a Super Admin can, for the
-  // rare case of removing genuinely abusive/incorrect content.
+  // may edit or delete their own comment. Only actors holding the
+  // SALES_QUERY_COMMENT_MODERATE permission can, for the rare case of
+  // removing genuinely abusive/incorrect content.
   async updateComment(
     queryId: string,
     commentId: string,
@@ -393,8 +428,8 @@ export const queryService = {
       throw new NotFoundError("Comment not found");
     if (comment.deleted)
       throw new BadRequestError("Cannot edit a deleted comment");
-    if (actor.role !== Role.SUPER_ADMIN) {
-      throw new ForbiddenError("Only a Super Admin can edit a comment");
+    if (!(await hasPermission(actor.id, actor.role, PERMISSIONS.SALES_QUERY_COMMENT_MODERATE))) {
+      throw new ForbiddenError("You do not have permission to edit this comment");
     }
     return queryRepository.updateComment(commentId, body);
   },
@@ -404,8 +439,8 @@ export const queryService = {
     const comment = await queryRepository.findCommentById(commentId);
     if (!comment || comment.queryId !== queryId)
       throw new NotFoundError("Comment not found");
-    if (actor.role !== Role.SUPER_ADMIN) {
-      throw new ForbiddenError("Only a Super Admin can delete a comment");
+    if (!(await hasPermission(actor.id, actor.role, PERMISSIONS.SALES_QUERY_COMMENT_MODERATE))) {
+      throw new ForbiddenError("You do not have permission to delete this comment");
     }
     return queryRepository.softDeleteComment(commentId);
   },

@@ -21,6 +21,7 @@ describe('Sales Query — comment thread', () => {
   let deptEmployeeId: string;
   let unrelatedExecToken: string;
   let superAdminToken: string;
+  let managerToken: string;
   let queryId: string;
 
   beforeAll(async () => {
@@ -41,7 +42,7 @@ describe('Sales Query — comment thread', () => {
     deptEmployeeToken = await login(deptEmployee.email, deptEmployeePw);
     unrelatedExecToken = await login(unrelatedExec.email, unrelatedExecPw);
     superAdminToken = await login(superAdmin.email, superAdminPw);
-    const managerToken = await login(manager.email, managerPw);
+    managerToken = await login(manager.email, managerPw);
     await prisma.user.update({ where: { id: exec.id }, data: { reportingToId: manager.id } });
 
     const department = await createTestDepartment(regionId, 'SQCDEPT');
@@ -138,7 +139,29 @@ describe('Sales Query — comment thread', () => {
     expect(edited.body.data.edited).toBe(true);
   });
 
-  it('rejects the author deleting their own comment — only a Super Admin may delete', async () => {
+  it('lets a Sales Manager (holds SALES_QUERY_COMMENT_MODERATE) edit and delete someone else\'s comment', async () => {
+    const created = await request(app)
+      .post(`/api/v1/sales-queries/${queryId}/comments`)
+      .set('Authorization', `Bearer ${execToken}`)
+      .send({ body: 'Original text for manager moderation' });
+    const commentId = created.body.data.id;
+
+    const edited = await request(app)
+      .patch(`/api/v1/sales-queries/${queryId}/comments/${commentId}`)
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ body: 'Edited by manager' });
+    expect(edited.status).toBe(200);
+    expect(edited.body.data.body).toBe('Edited by manager');
+    expect(edited.body.data.edited).toBe(true);
+
+    const deleted = await request(app)
+      .delete(`/api/v1/sales-queries/${queryId}/comments/${commentId}`)
+      .set('Authorization', `Bearer ${managerToken}`);
+    expect(deleted.status).toBe(200);
+    expect(deleted.body.data.deleted).toBe(true);
+  });
+
+  it('rejects the author deleting their own comment — only a moderator may delete', async () => {
     const created = await request(app)
       .post(`/api/v1/sales-queries/${queryId}/comments`)
       .set('Authorization', `Bearer ${execToken}`)

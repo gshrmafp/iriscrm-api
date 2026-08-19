@@ -43,6 +43,13 @@ salesQueryRouter.get(
   asyncHandler(salesQueryController.runReport),
 );
 
+salesQueryRouter.get(
+  '/sales-queries/meta/status-transitions',
+  requireAuth,
+  requirePermission(PERMISSIONS.SALES_QUERY_VIEW),
+  asyncHandler(salesQueryController.getStatusTransitionsMeta),
+);
+
 salesQueryRouter.post(
   '/sales-queries',
   requireAuth,

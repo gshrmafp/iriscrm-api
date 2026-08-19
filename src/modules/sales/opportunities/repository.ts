@@ -39,8 +39,10 @@ export const opportunityRepository = {
   // Per-stage counts/sums across ALL stages, plus pipeline value / weighted
   // forecast across the open (non-Won/Lost) subset — computed in the DB via
   // groupBy so the dashboard doesn't need to fetch every row to total them.
-  async getPipelineSummary(scopeWhere: { regionId?: string; ownerId?: string }) {
+  async getPipelineSummary(scopeWhere: { regionId?: string; ownerId?: string }, ownerId?: string) {
     const where: Prisma.OpportunityWhereInput = { ...scopeWhere, deletedAt: null };
+    // Same override guard as list(): an owner-scoped caller can't widen past their own opportunities.
+    if (ownerId && !scopeWhere.ownerId) where.ownerId = ownerId;
 
     const grouped = await prisma.opportunity.groupBy({
       by: ['stage'],

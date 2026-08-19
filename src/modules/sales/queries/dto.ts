@@ -198,6 +198,6 @@ export const reportQuerySchema = z.object({
   departmentId: z.string().optional(),
   userId: z.string().optional(),
   regionId: z.string().optional(),
-  format: z.enum(['json', 'csv', 'excel']).optional().default('json'),
+  format: z.enum(['json', 'csv']).optional().default('json'),
 });
 export type ReportQuery = z.infer<typeof reportQuerySchema>;

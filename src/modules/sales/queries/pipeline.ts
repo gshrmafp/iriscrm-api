@@ -2,7 +2,10 @@ import { SalesQueryStatus } from '@prisma/client';
 
 // Sales Query Management status workflow with loops.
 // Terminal states WON / LOST / CANCELLED must go through -> CLOSED.
-const FORWARD: Record<SalesQueryStatus, SalesQueryStatus[]> = {
+// Exported so the API can serve it as metadata (see routes.ts
+// GET /sales-queries/meta/status-transitions) instead of the frontend
+// hand-maintaining a duplicate copy in constants.ts.
+export const FORWARD: Record<SalesQueryStatus, SalesQueryStatus[]> = {
   NEW: [SalesQueryStatus.ASSIGNED, SalesQueryStatus.CANCELLED],
   ASSIGNED: [SalesQueryStatus.UNDER_REVIEW, SalesQueryStatus.CANCELLED, SalesQueryStatus.WAITING_FOR_INTERNAL_TEAM],
   UNDER_REVIEW: [

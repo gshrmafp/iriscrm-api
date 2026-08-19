@@ -3,7 +3,7 @@ import { ok } from '../../../core/http/response';
 import { UnauthorizedError } from '../../../core/errors/AppError';
 import { entityCommentService } from '../../comments/service';
 import { opportunityService } from './service';
-import { ListOpportunitiesQuery } from './dto';
+import { ListOpportunitiesQuery, PipelineSummaryQuery } from './dto';
 
 export const opportunityController = {
   async list(req: Request, res: Response) {
@@ -14,7 +14,8 @@ export const opportunityController = {
 
   async getPipelineSummary(req: Request, res: Response) {
     if (!req.user) throw new UnauthorizedError();
-    ok(res, await opportunityService.getPipelineSummary(req.user));
+    const { ownerId } = req.query as unknown as PipelineSummaryQuery;
+    ok(res, await opportunityService.getPipelineSummary(req.user, ownerId));
   },
 
   async get(req: Request, res: Response) {

@@ -45,3 +45,8 @@ export const listOpportunitiesQuerySchema = z.object({
   sortOrder: z.enum(['asc', 'desc']).optional().default('desc'),
 });
 export type ListOpportunitiesQuery = z.infer<typeof listOpportunitiesQuerySchema>;
+
+export const pipelineSummaryQuerySchema = z.object({
+  ownerId: z.string().optional(),
+});
+export type PipelineSummaryQuery = z.infer<typeof pipelineSummaryQuerySchema>;

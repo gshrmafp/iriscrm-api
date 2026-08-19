@@ -6,6 +6,12 @@ import {
 } from "../../../core/errors/AppError";
 import { queryService } from "./service";
 import { ListFollowUpsQuery, ListSalesQueriesQuery, ReportQuery } from "./dto";
+import {
+  FORWARD,
+  REMARK_REQUIRED_STATUSES,
+  STATUS_LABELS,
+  TERMINAL_STATUSES,
+} from "./pipeline";
 
 function csvResponse(res: Response, filename: string, csv: string) {
   res.setHeader("Content-Type", "text/csv; charset=utf-8");
@@ -14,6 +20,18 @@ function csvResponse(res: Response, filename: string, csv: string) {
 }
 
 export const salesQueryController = {
+  // Single source of truth for the status pipeline — the frontend fetches
+  // this instead of hand-maintaining a duplicate copy of pipeline.ts's graph.
+  async getStatusTransitionsMeta(req: Request, res: Response) {
+    if (!req.user) throw new UnauthorizedError();
+    ok(res, {
+      transitions: FORWARD,
+      remarkRequiredStatuses: REMARK_REQUIRED_STATUSES,
+      labels: STATUS_LABELS,
+      terminalStatuses: TERMINAL_STATUSES,
+    });
+  },
+
   async create(req: Request, res: Response) {
     if (!req.user) throw new UnauthorizedError();
     ok(res, await queryService.create(req.user, req.body), 201);
@@ -61,8 +79,7 @@ export const salesQueryController = {
 
   async listComments(req: Request, res: Response) {
     if (!req.user) throw new UnauthorizedError();
-    const query = (await queryService.get(req.params.id, req.user)) as any;
-    ok(res, query.comments);
+    ok(res, await queryService.getComments(req.params.id, req.user));
   },
 
   async addComment(req: Request, res: Response) {

@@ -51,8 +51,8 @@ export const opportunityService = {
     return opportunityRepository.list(this.buildScopeWhere(actor), filters);
   },
 
-  async getPipelineSummary(actor: AuthUser) {
-    return opportunityRepository.getPipelineSummary(this.buildScopeWhere(actor));
+  async getPipelineSummary(actor: AuthUser, ownerId?: string) {
+    return opportunityRepository.getPipelineSummary(this.buildScopeWhere(actor), ownerId);
   },
 
   async get(id: string, actor: AuthUser) {

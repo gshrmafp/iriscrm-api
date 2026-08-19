@@ -143,6 +143,40 @@ export const queryRepository = {
     };
   },
 
+  findVisibilityScope(id: string) {
+    return prisma.salesQuery.findFirst({
+      where: { id, deletedAt: null },
+      select: {
+        regionId: true,
+        ownerId: true,
+        assignedToId: true,
+        departmentId: true,
+      },
+    });
+  },
+
+  findCommentsForQuery(queryId: string) {
+    return prisma.queryComment.findMany({
+      where: { queryId, parentId: null },
+      orderBy: [{ isPinned: "desc" }, { createdAt: "asc" }],
+      include: {
+        author: {
+          select: { id: true, name: true, email: true, role: true },
+        },
+        replies: {
+          orderBy: { createdAt: "asc" },
+          include: {
+            attachments: true,
+            author: {
+              select: { id: true, name: true, email: true, role: true },
+            },
+          },
+        },
+        attachments: true,
+      },
+    });
+  },
+
   findById(id: string) {
     return prisma.salesQuery.findFirst({
       where: { id, deletedAt: null },

@@ -9,6 +9,7 @@ import { opportunityController } from './controller';
 import {
   listOpportunitiesQuerySchema,
   markLostSchema,
+  pipelineSummaryQuerySchema,
   reassignSchema,
   transitionStageSchema,
   winSchema,
@@ -67,9 +68,13 @@ opportunityRouter.get(
  * @openapi
  * /opportunities/summary/stats:
  *   get:
- *     summary: Pipeline value / weighted forecast / open count across all open (non-Won/Lost) opportunities in scope
+ *     summary: Per-stage counts/values, pipeline value, and weighted forecast across the caller's scope, optionally narrowed to one owner
  *     tags: [Opportunities]
  *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: ownerId
+ *         schema: { type: string }
  *     responses:
  *       200: { description: OK }
  */
@@ -77,6 +82,7 @@ opportunityRouter.get(
   '/opportunities/summary/stats',
   requireAuth,
   requirePermission(PERMISSIONS.SALES_OPPORTUNITY_VIEW),
+  validateQuery(pipelineSummaryQuerySchema),
   asyncHandler(opportunityController.getPipelineSummary),
 );
 
