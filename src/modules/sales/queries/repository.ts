@@ -798,8 +798,8 @@ export const queryRepository = {
     if (userId) base.OR = [{ ownerId: userId }, { createdBy: userId }];
 
     switch (reportType) {
-      case "pending_queries":
-        return prisma.salesQuery.findMany({
+      case "pending_queries": {
+        const pending = await prisma.salesQuery.findMany({
           where: {
             ...base,
             status: {
@@ -811,12 +811,31 @@ export const queryRepository = {
               ],
             },
           },
-          include: {
-            owner: { select: { id: true, name: true } },
-            department: true,
+          select: {
+            refNo: true,
+            customerName: true,
+            companyName: true,
+            city: true,
+            contactPhone: true,
+            status: true,
+            priority: true,
+            dueDate: true,
+            createdAt: true,
+            owner: { select: { name: true } },
+            department: { select: { name: true } },
           },
           orderBy: { createdAt: "desc" },
         });
+        // Flattened to plain strings rather than nested owner/department
+        // objects — this feeds a generic report table on the frontend that
+        // renders every value with String(), which would otherwise show
+        // "[object Object]" for a relation.
+        return pending.map(({ owner, department, ...rest }) => ({
+          ...rest,
+          ownerName: owner?.name ?? null,
+          departmentName: department?.name ?? null,
+        }));
+      }
 
       case "sales_conversion": {
         const [wonC, lostC, totalC] = await Promise.all([
@@ -842,25 +861,32 @@ export const queryRepository = {
         };
       }
 
-      case "follow_ups":
-        return prisma.queryFollowUp.findMany({
+      case "follow_ups": {
+        const followUps = await prisma.queryFollowUp.findMany({
           where: {
             deletedAt: null,
             ...(fromDate || toDate ? { scheduledAt: dateFilter } : {}),
           },
-          include: {
-            query: {
-              select: {
-                id: true,
-                refNo: true,
-                customerName: true,
-                status: true,
-              },
-            },
-            assignedTo: { select: { id: true, name: true, email: true } },
+          select: {
+            title: true,
+            note: true,
+            scheduledAt: true,
+            channel: true,
+            status: true,
+            outcome: true,
+            query: { select: { refNo: true, customerName: true, status: true } },
+            assignedTo: { select: { name: true } },
           },
           orderBy: { scheduledAt: "asc" },
         });
+        return followUps.map(({ query, assignedTo, ...rest }) => ({
+          ...rest,
+          queryRefNo: query.refNo,
+          queryCustomerName: query.customerName,
+          queryStatus: query.status,
+          assignedToName: assignedTo?.name ?? null,
+        }));
+      }
 
       case "resolution_time": {
         const closed = await prisma.salesQuery.findMany({
@@ -876,34 +902,46 @@ export const queryRepository = {
             },
           },
           select: {
-            id: true,
             refNo: true,
             customerName: true,
             status: true,
             createdAt: true,
             updatedAt: true,
-            ownerId: true,
+            owner: { select: { name: true } },
           },
           orderBy: { createdAt: "desc" },
           take: 500,
         });
-        return closed.map((q) => ({
+        return closed.map(({ owner, ...q }) => ({
           ...q,
+          ownerName: owner?.name ?? null,
           resolutionHours: Math.round(
             (q.updatedAt.getTime() - q.createdAt.getTime()) / (1000 * 60 * 60),
           ),
         }));
       }
 
-      case "lost_opportunity":
-        return prisma.salesQuery.findMany({
+      case "lost_opportunity": {
+        const lost = await prisma.salesQuery.findMany({
           where: { ...base, status: SalesQueryStatus.LOST },
-          include: {
-            owner: { select: { id: true, name: true } },
-            department: true,
+          select: {
+            refNo: true,
+            customerName: true,
+            companyName: true,
+            closeReason: true,
+            estimatedValue: true,
+            updatedAt: true,
+            owner: { select: { name: true } },
+            department: { select: { name: true } },
           },
           orderBy: { updatedAt: "desc" },
         });
+        return lost.map(({ owner, department, ...rest }) => ({
+          ...rest,
+          ownerName: owner?.name ?? null,
+          departmentName: department?.name ?? null,
+        }));
+      }
 
       case "employee_performance": {
         const ownerGrouped = await prisma.salesQuery.groupBy({
@@ -911,6 +949,11 @@ export const queryRepository = {
           where: base,
           _count: true,
         });
+        const owners = await prisma.user.findMany({
+          where: { id: { in: ownerGrouped.map((g) => g.ownerId) } },
+          select: { id: true, name: true },
+        });
+        const ownerNameById = new Map(owners.map((o) => [o.id, o.name]));
         return Promise.all(
           ownerGrouped.map(async (g) => {
             const won = await prisma.salesQuery.count({
@@ -928,7 +971,7 @@ export const queryRepository = {
               },
             });
             return {
-              ownerId: g.ownerId,
+              ownerName: ownerNameById.get(g.ownerId) ?? g.ownerId,
               total: g._count,
               won,
               lost,
@@ -944,6 +987,11 @@ export const queryRepository = {
           where: { ...base, departmentId: { not: null } },
           _count: true,
         });
+        const departments = await prisma.department.findMany({
+          where: { id: { in: deptGrouped.map((g) => g.departmentId).filter((id): id is string => !!id) } },
+          select: { id: true, name: true },
+        });
+        const departmentNameById = new Map(departments.map((d) => [d.id, d.name]));
         return Promise.all(
           deptGrouped.map(async (g) => {
             const won = await prisma.salesQuery.count({
@@ -954,7 +1002,7 @@ export const queryRepository = {
               },
             });
             return {
-              departmentId: g.departmentId,
+              departmentName: g.departmentId ? (departmentNameById.get(g.departmentId) ?? g.departmentId) : "Unassigned",
               total: g._count,
               won,
               conversionRate: won / g._count,
