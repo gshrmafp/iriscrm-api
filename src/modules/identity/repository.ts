@@ -1,6 +1,6 @@
 import { PermissionEffect, Prisma, Role, UserStatus } from '@prisma/client';
 import { prisma } from '../../core/db/prisma';
-import { CreateUserInput, ListUsersQuery } from './dto';
+import { CreateUserInput, ListUsersQuery, UpdateUserInput } from './dto';
 
 export const identityRepository = {
   findUserByEmail(email: string) {
@@ -122,6 +122,10 @@ export const identityRepository = {
 
   updateUserStatus(id: string, status: UserStatus) {
     return prisma.user.update({ where: { id }, data: { status } });
+  },
+
+  updateUser(id: string, data: UpdateUserInput) {
+    return prisma.user.update({ where: { id }, data });
   },
 };
 

@@ -13,6 +13,7 @@ import {
   permissionOverrideSchema,
   refreshSchema,
   updateRegionSchema,
+  updateUserSchema,
   updateUserStatusSchema,
 } from './dto';
 
@@ -333,4 +334,58 @@ identityRouter.patch(
   requirePermission(PERMISSIONS.IDENTITY_USER_MANAGE),
   validateBody(updateUserStatusSchema),
   asyncHandler(identityController.updateUserStatus),
+);
+
+/**
+ * @openapi
+ * /users/{id}:
+ *   get:
+ *     summary: Get a single user's profile (Super Admin, or Regional Admin within own region)
+ *     tags: [Identity]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: OK }
+ *   patch:
+ *     summary: Update a user's profile fields (Super Admin, or Regional Admin within own region)
+ *     tags: [Identity]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name: { type: string }
+ *               email: { type: string }
+ *               role:
+ *                 type: string
+ *                 enum: [SUPER_ADMIN, REGIONAL_ADMIN, SALES_MANAGER, SALES_EXECUTIVE, AUDITOR]
+ *               regionId: { type: string }
+ *               reportingToId: { type: string, nullable: true }
+ *     responses:
+ *       200: { description: OK }
+ */
+identityRouter.get(
+  '/users/:id',
+  requireAuth,
+  requirePermission(PERMISSIONS.IDENTITY_USER_MANAGE),
+  asyncHandler(identityController.getUser),
+);
+identityRouter.patch(
+  '/users/:id',
+  requireAuth,
+  requirePermission(PERMISSIONS.IDENTITY_USER_MANAGE),
+  validateBody(updateUserSchema),
+  asyncHandler(identityController.updateUser),
 );

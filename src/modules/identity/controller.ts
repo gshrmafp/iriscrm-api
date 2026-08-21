@@ -71,4 +71,16 @@ export const identityController = {
     const user = await identityService.updateUserStatus(req.user, req.params.id, req.body);
     ok(res, user);
   },
+
+  async getUser(req: Request, res: Response) {
+    if (!req.user) throw new UnauthorizedError();
+    const user = await identityService.getUser(req.user, req.params.id);
+    ok(res, user);
+  },
+
+  async updateUser(req: Request, res: Response) {
+    if (!req.user) throw new UnauthorizedError();
+    const user = await identityService.updateUser(req.user, req.params.id, req.body);
+    ok(res, user);
+  },
 };

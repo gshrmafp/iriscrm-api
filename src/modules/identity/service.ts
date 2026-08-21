@@ -15,6 +15,7 @@ import {
   LoginInput,
   PermissionOverrideInput,
   UpdateRegionInput,
+  UpdateUserInput,
   UpdateUserStatusInput,
 } from './dto';
 
@@ -163,6 +164,48 @@ export const identityService = {
     }
 
     const updated = await identityRepository.updateUserStatus(targetUserId, input.status);
+    const { passwordHash: _omit, ...safeUser } = updated;
+    return safeUser;
+  },
+
+  // Regional Admin may only view users within their own region; Super Admin
+  // may view anyone.
+  async getUser(actor: AuthUser, targetUserId: string) {
+    const target = await identityRepository.findUserById(targetUserId);
+    if (!target) throw new NotFoundError('User not found');
+    if (!CROSS_REGION_ROLES.includes(actor.role) && actor.regionId !== target.regionId) {
+      throw new ForbiddenError('Cannot view a user outside your own region');
+    }
+    const { passwordHash: _omit, ...safeUser } = target;
+    return safeUser;
+  },
+
+  // Edit a user's profile fields. Same region-scoping as updateUserStatus;
+  // moving a user to a *different* region additionally requires a
+  // cross-region role (mirrors createUser's region restriction). Status is
+  // deliberately not editable here — see updateUserStatus.
+  async updateUser(actor: AuthUser, targetUserId: string, input: UpdateUserInput) {
+    const target = await identityRepository.findUserById(targetUserId);
+    if (!target) throw new NotFoundError('User not found');
+
+    if (!CROSS_REGION_ROLES.includes(actor.role) && actor.regionId !== target.regionId) {
+      throw new ForbiddenError('Cannot manage a user outside your own region');
+    }
+
+    if (input.regionId && input.regionId !== target.regionId) {
+      if (!CROSS_REGION_ROLES.includes(actor.role)) {
+        throw new ForbiddenError('Only an Admin can move a user to another region');
+      }
+      const region = await identityRepository.findRegionById(input.regionId);
+      if (!region) throw new NotFoundError('Region not found');
+    }
+
+    if (input.email && input.email !== target.email) {
+      const existing = await identityRepository.findUserByEmail(input.email);
+      if (existing && existing.id !== targetUserId) throw new ConflictError('Email already in use');
+    }
+
+    const updated = await identityRepository.updateUser(targetUserId, input);
     const { passwordHash: _omit, ...safeUser } = updated;
     return safeUser;
   },

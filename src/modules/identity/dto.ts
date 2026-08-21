@@ -38,6 +38,20 @@ export const updateUserStatusSchema = z.object({
 });
 export type UpdateUserStatusInput = z.infer<typeof updateUserStatusSchema>;
 
+// Status has its own dedicated endpoint (with its own "can't deactivate
+// yourself" guard) — deliberately excluded here to keep that concern
+// separate.
+export const updateUserSchema = z
+  .object({
+    name: z.string().min(1).optional(),
+    email: z.string().email().optional(),
+    role: z.nativeEnum(Role).optional(),
+    regionId: z.string().min(1).optional(),
+    reportingToId: z.string().nullable().optional(),
+  })
+  .refine((data) => Object.keys(data).length > 0, { message: 'No fields to update' });
+export type UpdateUserInput = z.infer<typeof updateUserSchema>;
+
 export const permissionOverrideSchema = z.object({
   permissionKey: z.string().min(1),
   effect: z.nativeEnum(PermissionEffect),
