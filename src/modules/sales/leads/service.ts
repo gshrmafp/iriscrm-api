@@ -9,7 +9,14 @@ import { picklistService } from '../../picklists/service';
 import { opportunityService } from '../opportunities/service';
 import { registerCommentEntityAccessCheck } from '../../comments/service';
 import { leadRepository } from './repository';
-import { AddFollowUpInput, CreateLeadInput, ListLeadsQuery, MarkLostInput, QualifyLeadInput } from './dto';
+import {
+  AddFollowUpInput,
+  CreateLeadInput,
+  ListLeadFollowUpsQuery,
+  ListLeadsQuery,
+  MarkLostInput,
+  QualifyLeadInput,
+} from './dto';
 
 function canViewAllLeadsInRegion(role: string) {
   return role === 'SUPER_ADMIN' || role === 'REGIONAL_ADMIN' || role === 'SALES_MANAGER';
@@ -82,6 +89,10 @@ export const leadService = {
 
   async get(id: string, actor: AuthUser) {
     return loadOwnedOrThrow(id, actor);
+  },
+
+  async listFollowUps(actor: AuthUser, filters: ListLeadFollowUpsQuery) {
+    return leadRepository.listFollowUps(buildLeadScopeWhere(actor), filters);
   },
 
   // SM-1.9 / SM-1.10 — follow-up log with next-action reminder.

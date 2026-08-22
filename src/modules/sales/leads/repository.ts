@@ -1,6 +1,6 @@
 import { LeadStatus, Prisma } from '@prisma/client';
 import { prisma } from '../../../core/db/prisma';
-import { AddFollowUpInput, CreateLeadInput, ListLeadsQuery } from './dto';
+import { AddFollowUpInput, CreateLeadInput, ListLeadFollowUpsQuery, ListLeadsQuery } from './dto';
 
 export const leadRepository = {
   async list(
@@ -121,5 +121,29 @@ export const leadRepository = {
 
   markStatus(id: string, status: LeadStatus, lostReason?: string) {
     return prisma.lead.update({ where: { id }, data: { status, lostReason } });
+  },
+
+  // Flat, cross-lead follow-up feed — powers the mobile Activities tab.
+  // nextActionAt nulls sort last since a follow-up with no reminder isn't
+  // "due" anything; within that, newest-logged first.
+  async listFollowUps(scopeWhere: { regionId?: string; ownerId?: string }, filters: ListLeadFollowUpsQuery) {
+    const { page, pageSize, ownerId } = filters;
+    const leadWhere: Prisma.LeadWhereInput = { ...scopeWhere, deletedAt: null };
+    if (ownerId && !scopeWhere.ownerId) leadWhere.ownerId = ownerId;
+
+    const where: Prisma.LeadFollowUpWhereInput = { lead: leadWhere };
+    const skip = (page - 1) * pageSize;
+    const [items, total] = await Promise.all([
+      prisma.leadFollowUp.findMany({
+        where,
+        include: { lead: { select: { id: true, refNo: true, contactName: true, companyName: true } } },
+        orderBy: [{ nextActionAt: { sort: 'asc', nulls: 'last' } }, { createdAt: 'desc' }],
+        skip,
+        take: pageSize,
+      }),
+      prisma.leadFollowUp.count({ where }),
+    ]);
+
+    return { items, total, page, pageSize, totalPages: Math.ceil(total / pageSize) };
   },
 };

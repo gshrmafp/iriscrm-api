@@ -69,3 +69,12 @@ export const leadStatusSummaryQuerySchema = z.object({
   ownerId: z.string().optional(),
 });
 export type LeadStatusSummaryQuery = z.infer<typeof leadStatusSummaryQuerySchema>;
+
+// ---------- Follow-ups aggregate (across leads, for an Activities-style view) ----------
+
+export const listLeadFollowUpsQuerySchema = z.object({
+  ownerId: z.string().optional(),
+  page: z.coerce.number().int().positive().optional().default(1),
+  pageSize: z.coerce.number().int().positive().max(200).optional().default(50),
+});
+export type ListLeadFollowUpsQuery = z.infer<typeof listLeadFollowUpsQuerySchema>;

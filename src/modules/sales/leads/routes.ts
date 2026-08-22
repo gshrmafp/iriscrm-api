@@ -10,6 +10,7 @@ import {
   addFollowUpSchema,
   createLeadSchema,
   leadStatusSummaryQuerySchema,
+  listLeadFollowUpsQuerySchema,
   listLeadsQuerySchema,
   markLostSchema,
   qualifyLeadSchema,
@@ -134,6 +135,35 @@ leadRouter.get(
   requirePermission(PERMISSIONS.SALES_LEAD_VIEW),
   validateQuery(leadStatusSummaryQuerySchema),
   asyncHandler(leadController.statusSummary),
+);
+
+/**
+ * @openapi
+ * /leads/follow-ups:
+ *   get:
+ *     summary: Flat, cross-lead follow-up feed for the caller's visible leads (powers an Activities-style view), sorted by next-action-due first
+ *     tags: [Leads]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: ownerId
+ *         schema: { type: string }
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, default: 1 }
+ *       - in: query
+ *         name: pageSize
+ *         schema: { type: integer, default: 50, maximum: 200 }
+ *     responses:
+ *       200:
+ *         description: "Paginated result: { data: { items, total, page, pageSize, totalPages } }, each item embeds a minimal lead"
+ */
+leadRouter.get(
+  '/leads/follow-ups',
+  requireAuth,
+  requirePermission(PERMISSIONS.SALES_LEAD_VIEW),
+  validateQuery(listLeadFollowUpsQuerySchema),
+  asyncHandler(leadController.listFollowUps),
 );
 
 /**

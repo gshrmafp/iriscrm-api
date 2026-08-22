@@ -11,6 +11,7 @@ import { identityRouter } from './modules/identity/routes';
 import { catalogRouter } from './modules/sales/catalog/routes';
 import { leadRouter } from './modules/sales/leads/routes';
 import { opportunityRouter } from './modules/sales/opportunities/routes';
+import { customerRouter } from './modules/customers/routes';
 import { quotationRouter } from './modules/sales/quotations/routes';
 import { salesQueryRouter } from './modules/sales/queries/routes';
 import { departmentRouter } from './modules/departments/routes';
@@ -37,6 +38,7 @@ export function createApp() {
   v1.use(catalogRouter);
   v1.use(leadRouter);
   v1.use(opportunityRouter);
+  v1.use(customerRouter);
   v1.use(quotationRouter);
   v1.use(salesQueryRouter);
   v1.use(departmentRouter);
