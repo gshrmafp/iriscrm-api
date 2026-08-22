@@ -1,10 +1,16 @@
 import { CommentEntityType, Role } from '@prisma/client';
+import { prisma } from '../../core/db/prisma';
 import { AuthUser } from '../../core/middleware/types';
 import { BadRequestError, ForbiddenError, NotFoundError } from '../../core/errors/AppError';
+import { eventBus, DOMAIN_EVENTS } from '../../core/events/eventBus';
 import { entityCommentRepository } from './repository';
 import { CreateEntityCommentInput } from './dto';
 
-type EntityAccessCheck = (entityId: string, actor: AuthUser) => Promise<unknown>;
+// The entity shape actually varies (Lead vs Opportunity), but every access
+// check returns at least these two fields — which is all mention-resolution
+// and self-mention filtering below need.
+type EntityAccessResult = { regionId: string; ownerId: string };
+type EntityAccessCheck = (entityId: string, actor: AuthUser) => Promise<EntityAccessResult>;
 
 // Registered lazily by each owning module (leads/service.ts, opportunities/service.ts)
 // to avoid a hard import cycle — this module only needs "does the actor have
@@ -18,7 +24,20 @@ export function registerCommentEntityAccessCheck(entityType: CommentEntityType, 
 async function assertEntityAccess(entityType: CommentEntityType, entityId: string, actor: AuthUser) {
   const check = accessChecks[entityType];
   if (!check) throw new BadRequestError(`No access check registered for ${entityType}`);
-  await check(entityId, actor);
+  return check(entityId, actor);
+}
+
+// Leads/Opportunities have no department-membership concept like Sales
+// Queries do — the closest equivalent "who could plausibly be tagged" set is
+// anyone in the entity's own region (mirrors the region-scoped user directory
+// the frontend's @mention autocomplete already draws from).
+async function resolveRegionMentionIds(regionId: string, requested: string[]) {
+  if (requested.length === 0) return [];
+  const users = await prisma.user.findMany({
+    where: { id: { in: requested }, regionId },
+    select: { id: true },
+  });
+  return users.map((u) => u.id);
 }
 
 // Comments are a permanent audit trail once posted — not even the author may
@@ -36,8 +55,27 @@ export const entityCommentService = {
     actor: AuthUser,
     input: CreateEntityCommentInput,
   ) {
-    await assertEntityAccess(entityType, entityId, actor);
-    return entityCommentRepository.create(entityType, entityId, actor.id, input);
+    const entity = await assertEntityAccess(entityType, entityId, actor);
+    const mentionedUserIds = await resolveRegionMentionIds(entity.regionId, input.mentionedUserIds);
+
+    const comment = await entityCommentRepository.create(entityType, entityId, actor.id, {
+      ...input,
+      mentionedUserIds,
+    });
+
+    mentionedUserIds
+      .filter((userId) => userId !== actor.id)
+      .forEach((mentionedUserId) => {
+        eventBus.publish(DOMAIN_EVENTS.ENTITY_COMMENT_MENTIONED, {
+          entityType,
+          entityId,
+          commentId: comment.id,
+          mentionedUserId,
+          authorId: actor.id,
+        });
+      });
+
+    return comment;
   },
 
   async update(

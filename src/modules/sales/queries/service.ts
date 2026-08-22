@@ -274,6 +274,9 @@ export const queryService = {
     const query = await loadVisibleOrThrow(id, actor);
     const department = await departmentRepository.findById(input.departmentId);
     if (!department) throw new BadRequestError("Department not found");
+    if (!department.active) {
+      throw new BadRequestError("Cannot assign to a deactivated department");
+    }
     if (department.regionId && department.regionId !== query.regionId) {
       throw new BadRequestError(
         "Department does not belong to this query's region",
@@ -303,11 +306,15 @@ export const queryService = {
         input.assignedToId,
       );
       if (!assignedUser) throw new BadRequestError("Assigned user not found");
+      if (assignedUser.status !== "ACTIVE")
+        throw new BadRequestError("Cannot assign to a deactivated user");
       if (assignedUser.regionId !== query.regionId)
         throw new BadRequestError("Assigned user is in a different region");
     }
     const ownerUser = await identityRepository.findUserById(input.ownerId);
     if (!ownerUser) throw new BadRequestError("Owner user not found");
+    if (ownerUser.status !== "ACTIVE")
+      throw new BadRequestError("Cannot assign ownership to a deactivated user");
     if (ownerUser.regionId !== query.regionId)
       throw new BadRequestError("Owner user is in a different region");
 

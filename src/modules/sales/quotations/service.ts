@@ -10,9 +10,10 @@ import { getEffectivePermissions } from "../../../core/rbac/effectivePermissions
 import { eventBus, DOMAIN_EVENTS } from "../../../core/events/eventBus";
 import { opportunityRepository } from "../opportunities/repository";
 import { opportunityService } from "../opportunities/service";
+import { catalogRepository } from "../catalog/repository";
 import { quotationRepository } from "./repository";
 import { computeTotals } from "./pricing";
-import { CreateQuotationInput, ReviseQuotationInput } from "./dto";
+import { CreateQuotationInput, ReviseQuotationInput, QuotationLineInput } from "./dto";
 
 async function loadOpenOpportunityOrThrow(opportunityId: string) {
   const opportunity = await opportunityRepository.findById(opportunityId);
@@ -21,6 +22,24 @@ async function loadOpenOpportunityOrThrow(opportunityId: string) {
     throw new BadRequestError("Cannot quote a closed opportunity");
   }
   return opportunity;
+}
+
+// Lines may reference a catalog item or be free-text (catalogItemId is
+// optional) — only the referenced ones need validating. Mirrors
+// picklists/service.ts#assertActiveOption: a quotation shouldn't be
+// buildable from a stale dropdown or a crafted request referencing an item
+// that's since been deactivated.
+async function assertLineCatalogItemsActive(lines: QuotationLineInput[]) {
+  const catalogItemIds = [...new Set(lines.map((l) => l.catalogItemId).filter((id): id is string => !!id))];
+  if (catalogItemIds.length === 0) return;
+
+  const items = await catalogRepository.findItemsByIds(catalogItemIds);
+  const itemById = new Map(items.map((item) => [item.id, item]));
+  for (const id of catalogItemIds) {
+    const item = itemById.get(id);
+    if (!item) throw new BadRequestError(`Catalog item ${id} not found`);
+    if (!item.active) throw new BadRequestError(`Catalog item "${item.name}" is no longer active`);
+  }
 }
 
 function withinOwnLimit(
@@ -37,6 +56,7 @@ function withinOwnLimit(
 export const quotationService = {
   async create(actor: AuthUser, input: CreateQuotationInput) {
     const opportunity = await loadOpenOpportunityOrThrow(input.opportunityId);
+    await assertLineCatalogItemsActive(input.lines);
     const totals = computeTotals(input.lines);
 
     return quotationRepository.create({
@@ -57,6 +77,7 @@ export const quotationService = {
     const existing = await quotationRepository.findById(quotationId);
     if (!existing) throw new NotFoundError("Quotation not found");
     await loadOpenOpportunityOrThrow(existing.opportunityId);
+    await assertLineCatalogItemsActive(input.lines);
 
     const totals = computeTotals(input.lines);
     const nextVersion =

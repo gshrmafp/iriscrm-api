@@ -30,4 +30,7 @@ export const DOMAIN_EVENTS = {
   SALES_QUERY_MENTIONED: 'SalesQueryMentioned',
   FOLLOW_UP_DUE: 'FollowUpDue',
   FOLLOW_UP_OVERDUE: 'FollowUpOverdue',
+  // Shared by Lead and Opportunity comments (EntityComment) — mirrors
+  // SALES_QUERY_MENTIONED for Sales Query comments.
+  ENTITY_COMMENT_MENTIONED: 'EntityCommentMentioned',
 } as const;

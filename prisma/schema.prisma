@@ -790,6 +790,9 @@ enum NotificationType {
   FOLLOW_UP_OVERDUE
   QUERY_ATTACHMENT_UPLOADED
   QUERY_DUE_DATE_UPDATED
+  // Shared by Lead and Opportunity comments (EntityComment) — see
+  // CommentEntityType. Mirrors QUERY_MENTIONED for Sales Query comments.
+  ENTITY_MENTIONED
 }
 
 model Notification {

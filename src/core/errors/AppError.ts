@@ -29,6 +29,22 @@ export class ForbiddenError extends AppError {
   }
 }
 
+// Distinct codes (not just 401/403) so the frontend can branch on exactly
+// this case — force logout vs. a generic auth failure — instead of fragile
+// string-matching on `message`. Thrown by requireAuth on every request, not
+// just at login, so deactivation takes effect on the very next API call.
+export class AccountInactiveError extends AppError {
+  constructor(message = 'Your account has been deactivated. Contact your administrator.') {
+    super(401, 'ACCOUNT_INACTIVE', message);
+  }
+}
+
+export class RegionInactiveError extends AppError {
+  constructor(message = 'Your region has been deactivated. Contact your administrator.') {
+    super(403, 'REGION_INACTIVE', message);
+  }
+}
+
 export class NotFoundError extends AppError {
   constructor(message = 'Not found') {
     super(404, 'NOT_FOUND', message);

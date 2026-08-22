@@ -37,6 +37,10 @@ export const catalogRepository = {
     return prisma.catalogItem.findFirst({ where: { id, deletedAt: null } });
   },
 
+  findItemsByIds(ids: string[]) {
+    return prisma.catalogItem.findMany({ where: { id: { in: ids }, deletedAt: null } });
+  },
+
   findItemByCode(code: string) {
     return prisma.catalogItem.findUnique({ where: { code } });
   },

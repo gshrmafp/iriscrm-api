@@ -155,6 +155,23 @@ export const queryRepository = {
     });
   },
 
+  // Just the display fields notification messages need — avoids pulling the
+  // full comments/attachments/activities/followUps graph (findById above)
+  // into every fire-and-forget notification handler.
+  findSummaryById(id: string) {
+    return prisma.salesQuery.findFirst({
+      where: { id, deletedAt: null },
+      select: {
+        refNo: true,
+        customerName: true,
+        companyName: true,
+        priority: true,
+        status: true,
+        dueDate: true,
+      },
+    });
+  },
+
   findCommentsForQuery(queryId: string) {
     return prisma.queryComment.findMany({
       where: { queryId, parentId: null },
