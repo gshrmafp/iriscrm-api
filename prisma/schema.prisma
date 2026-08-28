@@ -126,6 +126,7 @@ model Customer {
   name      String
   type      String // e.g. Individual, Business
   active    Boolean   @default(true)
+  revenue   Decimal?  @db.Decimal(14, 2) // annual revenue, optional — sales-entered estimate
   contacts  Json? // [{name, phone, email}]
   addresses Json? // [{line1, city, state, pincode}]
   regionId  String
@@ -218,16 +219,25 @@ model Lead {
   @@map("leads")
 }
 
+enum FollowUpPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
 // SM-1.9 / SM-1.10 — follow-up log with next-action reminder
 model LeadFollowUp {
-  id           String    @id @default(cuid())
+  id           String           @id @default(cuid())
   leadId       String
-  lead         Lead      @relation(fields: [leadId], references: [id])
+  lead         Lead             @relation(fields: [leadId], references: [id])
   note         String
   channel      String // call | meeting | email
   nextActionAt DateTime?
+  priority     FollowUpPriority @default(MEDIUM)
+  completedAt  DateTime?
   createdBy    String
-  createdAt    DateTime  @default(now())
+  createdAt    DateTime         @default(now())
 
   @@index([leadId])
   @@index([nextActionAt])

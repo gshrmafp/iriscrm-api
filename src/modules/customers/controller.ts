@@ -20,4 +20,9 @@ export const customerController = {
     if (!req.user) throw new UnauthorizedError();
     ok(res, await customerService.get(req.params.id, req.user));
   },
+
+  async summary(req: Request, res: Response) {
+    if (!req.user) throw new UnauthorizedError();
+    ok(res, await customerService.summary(req.user));
+  },
 };

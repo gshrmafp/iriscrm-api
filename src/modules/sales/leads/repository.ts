@@ -35,7 +35,10 @@ export const leadRepository = {
     const [items, total] = await Promise.all([
       prisma.lead.findMany({
         where,
-        include: { followUps: { orderBy: { createdAt: 'desc' }, take: 5 } },
+        include: {
+          followUps: { orderBy: { createdAt: 'desc' }, take: 5 },
+          opportunity: { select: { id: true, value: true, stage: true } },
+        },
         // Tiebreaker keeps pagination deterministic across identical requests
         // when bulk-seeded rows share the same createdAt.
         orderBy: [{ [sortBy]: sortOrder }, { id: 'asc' }],
@@ -114,9 +117,18 @@ export const leadRepository = {
         note: input.note,
         channel: input.channel,
         nextActionAt: input.nextActionAt,
+        priority: input.priority ?? 'MEDIUM',
         createdBy: input.createdBy,
       },
     });
+  },
+
+  findFollowUpById(id: string) {
+    return prisma.leadFollowUp.findUnique({ where: { id }, include: { lead: true } });
+  },
+
+  completeFollowUp(id: string) {
+    return prisma.leadFollowUp.update({ where: { id }, data: { completedAt: new Date() } });
   },
 
   markStatus(id: string, status: LeadStatus, lostReason?: string) {
@@ -127,11 +139,12 @@ export const leadRepository = {
   // nextActionAt nulls sort last since a follow-up with no reminder isn't
   // "due" anything; within that, newest-logged first.
   async listFollowUps(scopeWhere: { regionId?: string; ownerId?: string }, filters: ListLeadFollowUpsQuery) {
-    const { page, pageSize, ownerId } = filters;
+    const { page, pageSize, ownerId, completed } = filters;
     const leadWhere: Prisma.LeadWhereInput = { ...scopeWhere, deletedAt: null };
     if (ownerId && !scopeWhere.ownerId) leadWhere.ownerId = ownerId;
 
     const where: Prisma.LeadFollowUpWhereInput = { lead: leadWhere };
+    if (completed !== undefined) where.completedAt = completed ? { not: null } : null;
     const skip = (page - 1) * pageSize;
     const [items, total] = await Promise.all([
       prisma.leadFollowUp.findMany({
@@ -145,5 +158,27 @@ export const leadRepository = {
     ]);
 
     return { items, total, page, pageSize, totalPages: Math.ceil(total / pageSize) };
+  },
+
+  // Powers the mobile Home dashboard's "Active leads" tile. "Needs attention"
+  // is a real, derived signal (no follow-up logged in the last 3 days) rather
+  // than a stored/subjective field — every lead with zero follow-ups counts too.
+  async dashboardSummary(scopeWhere: { regionId?: string; ownerId?: string }, ownerId?: string) {
+    const where: Prisma.LeadWhereInput = { ...scopeWhere, deletedAt: null, status: { not: 'LOST' } };
+    if (ownerId && !scopeWhere.ownerId) where.ownerId = ownerId;
+
+    const activeLeads = await prisma.lead.findMany({
+      where,
+      select: { followUps: { orderBy: { createdAt: 'desc' }, take: 1, select: { createdAt: true } } },
+    });
+
+    const STALE_MS = 3 * 24 * 60 * 60 * 1000;
+    const now = Date.now();
+    const needAttentionCount = activeLeads.filter((lead) => {
+      const lastFollowUp = lead.followUps[0];
+      return !lastFollowUp || now - lastFollowUp.createdAt.getTime() > STALE_MS;
+    }).length;
+
+    return { activeCount: activeLeads.length, needAttentionCount };
   },
 };

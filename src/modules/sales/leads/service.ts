@@ -95,10 +95,27 @@ export const leadService = {
     return leadRepository.listFollowUps(buildLeadScopeWhere(actor), filters);
   },
 
+  // Real, derived "needs attention" signal (no follow-up in 3+ days) — not a
+  // stored/subjective field. Powers the mobile Home dashboard's lead tile.
+  async dashboardSummary(actor: AuthUser, ownerId?: string) {
+    return leadRepository.dashboardSummary(buildLeadScopeWhere(actor), ownerId);
+  },
+
   // SM-1.9 / SM-1.10 — follow-up log with next-action reminder.
   async addFollowUp(id: string, actor: AuthUser, input: AddFollowUpInput) {
     await loadOwnedOrThrow(id, actor);
     return leadRepository.addFollowUp(id, { ...input, createdBy: actor.id });
+  },
+
+  async completeFollowUp(followUpId: string, actor: AuthUser) {
+    const followUp = await leadRepository.findFollowUpById(followUpId);
+    if (!followUp) throw new NotFoundError('Follow-up not found');
+    assertSameRegionOrElevated(actor, followUp.lead.regionId);
+    if (!canViewAllLeadsInRegion(actor.role) && followUp.lead.ownerId !== actor.id) {
+      throw new ForbiddenError('You can only act on your own leads');
+    }
+    if (followUp.completedAt) throw new BadRequestError('Follow-up is already complete');
+    return leadRepository.completeFollowUp(followUpId);
   },
 
   // SM-1.11 — mandatory reason to mark Lost.

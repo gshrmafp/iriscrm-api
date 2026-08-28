@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { LeadStatus } from '@prisma/client';
+import { FollowUpPriority, LeadStatus } from '@prisma/client';
 
 // Indian mobile numbers: 10 digits starting 6-9, with an optional +91/91/0 STD-style prefix.
 const MOBILE_REGEX = /^(?:\+?91[-\s]?|0)?[6-9]\d{9}$/;
@@ -33,6 +33,7 @@ export const addFollowUpSchema = z.object({
   note: z.string().min(1),
   channel: z.enum(['call', 'meeting', 'email']),
   nextActionAt: z.coerce.date().optional(),
+  priority: z.nativeEnum(FollowUpPriority).optional(),
 });
 export type AddFollowUpInput = z.infer<typeof addFollowUpSchema>;
 
@@ -74,6 +75,7 @@ export type LeadStatusSummaryQuery = z.infer<typeof leadStatusSummaryQuerySchema
 
 export const listLeadFollowUpsQuerySchema = z.object({
   ownerId: z.string().optional(),
+  completed: z.coerce.boolean().optional(),
   page: z.coerce.number().int().positive().optional().default(1),
   pageSize: z.coerce.number().int().positive().max(200).optional().default(50),
 });

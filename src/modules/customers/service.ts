@@ -35,6 +35,10 @@ export const customerService = {
     return customerRepository.list(buildCustomerScopeWhere(actor), filters);
   },
 
+  async summary(actor: AuthUser) {
+    return customerRepository.summary(buildCustomerScopeWhere(actor));
+  },
+
   async get(id: string, actor: AuthUser) {
     const customer = await customerRepository.findById(id);
     if (!customer) throw new NotFoundError('Customer not found');

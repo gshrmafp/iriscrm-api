@@ -74,4 +74,18 @@ describe('Customers module — create, list, region isolation', () => {
       .send({ name: 'Duplicate Co', type: 'Business' });
     expect(dupRes.status).toBe(400);
   });
+
+  it('stores an optional revenue estimate and reflects it in the summary counts', async () => {
+    const createRes = await request(app)
+      .post('/api/v1/customers')
+      .set('Authorization', `Bearer ${execAToken}`)
+      .send({ name: 'Revenue Co', type: 'Business', revenue: 500000 });
+    expect(createRes.status).toBe(201);
+    expect(Number(createRes.body.data.revenue)).toBe(500000);
+
+    const summaryRes = await request(app).get('/api/v1/customers/summary').set('Authorization', `Bearer ${execAToken}`);
+    expect(summaryRes.status).toBe(200);
+    expect(summaryRes.body.data.total).toBeGreaterThanOrEqual(3); // Acme Corp, Duplicate Co, Revenue Co
+    expect(summaryRes.body.data.newThisMonth).toBeGreaterThanOrEqual(3); // all created just now
+  });
 });

@@ -168,6 +168,51 @@ leadRouter.get(
 
 /**
  * @openapi
+ * /leads/follow-ups/{followUpId}/complete:
+ *   post:
+ *     summary: Mark a follow-up complete
+ *     tags: [Leads]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: followUpId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: OK }
+ */
+leadRouter.post(
+  '/leads/follow-ups/:followUpId/complete',
+  requireAuth,
+  requirePermission(PERMISSIONS.SALES_LEAD_CREATE),
+  asyncHandler(leadController.completeFollowUp),
+);
+
+/**
+ * @openapi
+ * /leads/dashboard-summary:
+ *   get:
+ *     summary: Active/needs-attention lead counts for the caller (real, derived — not stored fields), powers the mobile Home dashboard
+ *     tags: [Leads]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: ownerId
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: "{ activeCount, needAttentionCount }"
+ */
+leadRouter.get(
+  '/leads/dashboard-summary',
+  requireAuth,
+  requirePermission(PERMISSIONS.SALES_LEAD_VIEW),
+  validateQuery(leadStatusSummaryQuerySchema),
+  asyncHandler(leadController.dashboardSummary),
+);
+
+/**
+ * @openapi
  * /leads/{id}:
  *   get:
  *     summary: Get one lead with follow-up history

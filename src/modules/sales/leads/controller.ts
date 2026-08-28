@@ -35,9 +35,20 @@ export const leadController = {
     ok(res, await leadService.listFollowUps(req.user, filters));
   },
 
+  async dashboardSummary(req: Request, res: Response) {
+    if (!req.user) throw new UnauthorizedError();
+    const { ownerId } = req.query as unknown as LeadStatusSummaryQuery;
+    ok(res, await leadService.dashboardSummary(req.user, ownerId));
+  },
+
   async addFollowUp(req: Request, res: Response) {
     if (!req.user) throw new UnauthorizedError();
     ok(res, await leadService.addFollowUp(req.params.id, req.user, req.body), 201);
+  },
+
+  async completeFollowUp(req: Request, res: Response) {
+    if (!req.user) throw new UnauthorizedError();
+    ok(res, await leadService.completeFollowUp(req.params.followUpId, req.user));
   },
 
   async markLost(req: Request, res: Response) {

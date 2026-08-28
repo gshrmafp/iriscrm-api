@@ -61,4 +61,36 @@ describe('GET /leads/follow-ups — cross-lead follow-up feed', () => {
     expect(res.body.data.items[0].lead.contactName).toBe('Lead One');
     expect(res.body.data.items[1].lead.id).toBe(leadTwoId);
   });
+
+  it('defaults priority to MEDIUM, accepts an explicit priority, and completes a follow-up', async () => {
+    const listRes = await request(app).get('/api/v1/leads/follow-ups').set('Authorization', `Bearer ${execToken}`);
+    const followUp = listRes.body.data.items.find((item: { leadId: string }) => item.leadId === leadTwoId);
+    expect(followUp.priority).toBe('MEDIUM');
+    expect(followUp.completedAt).toBeNull();
+
+    const highPriorityRes = await request(app)
+      .post(`/api/v1/leads/${leadOneId}/follow-ups`)
+      .set('Authorization', `Bearer ${execToken}`)
+      .send({ note: 'Urgent callback', channel: 'call', priority: 'HIGH' });
+    expect(highPriorityRes.body.data.priority).toBe('HIGH');
+
+    const completeRes = await request(app)
+      .post(`/api/v1/leads/follow-ups/${followUp.id}/complete`)
+      .set('Authorization', `Bearer ${execToken}`);
+    expect(completeRes.status).toBe(200);
+    expect(completeRes.body.data.completedAt).not.toBeNull();
+
+    const alreadyCompleteRes = await request(app)
+      .post(`/api/v1/leads/follow-ups/${followUp.id}/complete`)
+      .set('Authorization', `Bearer ${execToken}`);
+    expect(alreadyCompleteRes.status).toBe(400);
+  });
+
+  it('returns real, derived active/needs-attention lead counts on the dashboard summary', async () => {
+    const res = await request(app).get('/api/v1/leads/dashboard-summary').set('Authorization', `Bearer ${execToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.data.activeCount).toBe(2);
+    // Both leads have a follow-up logged just now, so neither is stale yet.
+    expect(res.body.data.needAttentionCount).toBe(0);
+  });
 });

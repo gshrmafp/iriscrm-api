@@ -68,7 +68,28 @@ export const opportunityRepository = {
       weightedForecast += s.value * (STAGE_PROBABILITY[s.stage] / 100);
     }
 
-    return { byStage, openCount, pipelineValue, weightedForecast };
+    // New-pipeline-value trend (this calendar month's newly created opportunity
+    // value vs last month's) — a real, honestly-computable signal from
+    // createdAt alone. Deliberately NOT "current pipeline value vs 30 days
+    // ago," which would need historical snapshots we don't have.
+    const now = new Date();
+    const startOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+
+    const [thisMonth, lastMonth] = await Promise.all([
+      prisma.opportunity.aggregate({
+        where: { ...where, createdAt: { gte: startOfThisMonth } },
+        _sum: { value: true },
+      }),
+      prisma.opportunity.aggregate({
+        where: { ...where, createdAt: { gte: startOfLastMonth, lt: startOfThisMonth } },
+        _sum: { value: true },
+      }),
+    ]);
+    const newValueThisMonth = Number(thisMonth._sum.value ?? 0);
+    const newValueLastMonth = Number(lastMonth._sum.value ?? 0);
+
+    return { byStage, openCount, pipelineValue, weightedForecast, newValueThisMonth, newValueLastMonth };
   },
 
   findById(id: string) {

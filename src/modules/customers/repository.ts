@@ -11,10 +11,14 @@ export const customerRepository = {
     if (search) where.name = { contains: search, mode: 'insensitive' };
 
     const skip = (page - 1) * pageSize;
+    // Cheap single-query "last activity" signal (most recent linked Lead's
+    // updatedAt) rather than an N+1 per row — the mobile client derives a
+    // real, honest recency badge from this instead of a stored/subjective
+    // "health" field.
     const [items, total] = await Promise.all([
       prisma.customer.findMany({
         where,
-        // Tiebreaker keeps pagination deterministic when rows share a createdAt.
+        include: { leads: { orderBy: { updatedAt: 'desc' }, take: 1, select: { updatedAt: true } } },
         orderBy: [{ [sortBy]: sortOrder }, { id: 'asc' }],
         skip,
         take: pageSize,
@@ -39,11 +43,26 @@ export const customerRepository = {
         id: data.id,
         name: data.name,
         type: data.type,
+        revenue: data.revenue,
         contacts: data.contacts,
         addresses: data.addresses,
         regionId: data.regionId,
         createdBy: data.createdBy,
       },
     });
+  },
+
+  // Powers the mobile Home dashboard's "Customers" tile — total + a real,
+  // createdAt-derived "new this month" count (no fabricated trend %).
+  async summary(scopeWhere: { regionId?: string }) {
+    const where: Prisma.CustomerWhereInput = { ...scopeWhere, deletedAt: null };
+    const startOfThisMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+
+    const [total, newThisMonth] = await Promise.all([
+      prisma.customer.count({ where }),
+      prisma.customer.count({ where: { ...where, createdAt: { gte: startOfThisMonth } } }),
+    ]);
+
+    return { total, newThisMonth };
   },
 };

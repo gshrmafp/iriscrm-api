@@ -77,6 +77,24 @@ customerRouter.get(
 
 /**
  * @openapi
+ * /customers/summary:
+ *   get:
+ *     summary: Total + new-this-month customer counts (real, createdAt-derived — no fabricated trend), powers the mobile Home dashboard
+ *     tags: [Customers]
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200:
+ *         description: "{ total, newThisMonth }"
+ */
+customerRouter.get(
+  '/customers/summary',
+  requireAuth,
+  requirePermission(PERMISSIONS.SALES_CUSTOMER_VIEW),
+  asyncHandler(customerController.summary),
+);
+
+/**
+ * @openapi
  * /customers/{id}:
  *   get:
  *     summary: Get one customer

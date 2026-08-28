@@ -16,6 +16,7 @@ const addressSchema = z.object({
 export const createCustomerSchema = z.object({
   name: z.string().min(1, 'Name is required'),
   type: z.string().min(1, 'Type is required'), // e.g. Individual, Business
+  revenue: z.coerce.number().positive().optional(), // annual revenue, sales-entered estimate
   contacts: z.array(contactSchema).optional(),
   addresses: z.array(addressSchema).optional(),
   regionId: z.string().optional(), // Admin may override; defaults to creator's region
