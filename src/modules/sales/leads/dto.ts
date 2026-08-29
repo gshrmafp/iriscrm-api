@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { FollowUpPriority, LeadStatus } from '@prisma/client';
+import { FollowUpPriority, LeadStatus, OpportunityStage } from '@prisma/client';
 
 // Indian mobile numbers: 10 digits starting 6-9, with an optional +91/91/0 STD-style prefix.
 const MOBILE_REGEX = /^(?:\+?91[-\s]?|0)?[6-9]\d{9}$/;
@@ -53,6 +53,12 @@ export type QualifyLeadInput = z.infer<typeof qualifyLeadSchema>;
 
 export const listLeadsQuerySchema = z.object({
   status: z.nativeEnum(LeadStatus).optional(),
+  // Filters by the linked Opportunity's stage instead of the Lead's own
+  // status — "Quoted" (and other post-qualification stages) live on
+  // Opportunity, not Lead, since a Lead converts into an Opportunity once
+  // qualified. Mutually exclusive with `status` in practice (a lead with an
+  // opportunity is already QUALIFIED), but both are applied if both are sent.
+  opportunityStage: z.nativeEnum(OpportunityStage).optional(),
   source: z.string().optional(),
   productInterest: z.string().optional(),
   ownerId: z.string().optional(),

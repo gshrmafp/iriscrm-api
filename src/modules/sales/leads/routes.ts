@@ -77,6 +77,10 @@ export const leadRouter = Router();
  *         name: status
  *         schema: { type: string, enum: [NEW, QUALIFIED, LOST] }
  *       - in: query
+ *         name: opportunityStage
+ *         description: Filters by the linked Opportunity's stage (e.g. QUOTED) instead of the lead's own status.
+ *         schema: { type: string, enum: [NEW, CONTACTED, QUOTED, NEGOTIATION, WON, LOST] }
+ *       - in: query
  *         name: source
  *         schema: { type: string }
  *       - in: query

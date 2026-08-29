@@ -7,11 +7,24 @@ export const leadRepository = {
     scopeWhere: { regionId?: string; ownerId?: string },
     filters: ListLeadsQuery,
   ) {
-    const { page, pageSize, sortBy, sortOrder, status, source, productInterest, ownerId, search, dateFrom, dateTo } =
-      filters;
+    const {
+      page,
+      pageSize,
+      sortBy,
+      sortOrder,
+      status,
+      opportunityStage,
+      source,
+      productInterest,
+      ownerId,
+      search,
+      dateFrom,
+      dateTo,
+    } = filters;
 
     const where: Prisma.LeadWhereInput = { ...scopeWhere, deletedAt: null };
     if (status) where.status = status;
+    if (opportunityStage) where.opportunity = { is: { stage: opportunityStage } };
     if (source) where.source = source;
     if (productInterest) where.productInterest = { contains: productInterest, mode: 'insensitive' };
     // scopeWhere.ownerId means the caller is restricted to their own leads —
