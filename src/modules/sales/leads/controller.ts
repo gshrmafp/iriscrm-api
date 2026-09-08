@@ -61,6 +61,23 @@ export const leadController = {
     ok(res, await leadService.qualify(req.params.id, req.user, req.body), 201);
   },
 
+  // Stepped lead creation
+  async createStepped(req: Request, res: Response) {
+    if (!req.user) throw new UnauthorizedError();
+    ok(res, await leadService.createStepped(req.user, req.body), 201);
+  },
+
+  async saveStep2(req: Request, res: Response) {
+    if (!req.user) throw new UnauthorizedError();
+    ok(res, await leadService.saveStep2(req.params.id, req.user, req.body));
+  },
+
+  async saveStep3(req: Request, res: Response) {
+    if (!req.user) throw new UnauthorizedError();
+    const result = await leadService.saveStep3(req.params.id, req.user, req.body);
+    ok(res, result, result.opportunity ? 201 : 200);
+  },
+
   async listComments(req: Request, res: Response) {
     if (!req.user) throw new UnauthorizedError();
     ok(res, await entityCommentService.list('LEAD', req.params.id, req.user));

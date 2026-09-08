@@ -185,7 +185,7 @@ model Lead {
   refNo           String     @unique // region-prefixed, e.g. GGN-L-000123
   customerId      String?
   customer        Customer?  @relation(fields: [customerId], references: [id])
-  contactName     String
+  contactName     String?
   companyName     String?
   contactPhone    String?
   contactEmail    String?
@@ -193,13 +193,20 @@ model Lead {
   gpsLatitude     Decimal?   @db.Decimal(10, 7)
   gpsLongitude    Decimal?   @db.Decimal(10, 7)
   visitLocation   String? // reverse-geocoded label for gpsLatitude/gpsLongitude
-  source          String
+  source          String?
   sourceOther     String? // free-text detail when source's picklist code is OTHER
   productInterest String?
   productInterestOther String? // free-text detail when productInterest's picklist code is OTHER
   notes           String? // max 400 chars, enforced by createLeadSchema/updateLeadSchema
   status          LeadStatus @default(NEW)
   lostReason      String?
+  currentStep      Int        @default(1)
+  step1CompletedAt DateTime?
+  step2CompletedAt DateTime?
+  step3CompletedAt DateTime?
+  remarks          String?
+  discussionNote   String?
+  qualificationPath String?
   regionId        String
   region          Region     @relation(fields: [regionId], references: [id])
   ownerId         String
@@ -252,6 +259,7 @@ enum DealType {
   INSTALLATION
   AMC
   PRODUCT
+  MAINTENANCE
 }
 
 enum OpportunityStage {
@@ -282,6 +290,9 @@ model Opportunity {
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
   deletedAt     DateTime?
+  initialQuotationRef    String?
+  initialQuotationDate   DateTime?
+  initialQuotationAmount Decimal?         @db.Decimal(14, 2)
 
   stageHistory       OpportunityStageHistory[]
   quotations         Quotation[]

@@ -16,6 +16,9 @@ import {
   ListLeadsQuery,
   MarkLostInput,
   QualifyLeadInput,
+  SaveStep1Input,
+  SaveStep2Input,
+  SaveStep3Input,
 } from './dto';
 
 function canViewAllLeadsInRegion(role: string) {
@@ -134,6 +137,95 @@ export const leadService = {
     const opportunity = await opportunityService.createFromLead(lead, input, actor);
     await leadRepository.markStatus(id, LeadStatus.QUALIFIED);
     return opportunity;
+  },
+
+  // ---------- Stepped lead creation (3-step wizard) ----------
+
+  async createStepped(actor: AuthUser, input: SaveStep1Input) {
+    const regionId = actor.regionId;
+    const region = await identityRepository.findRegionById(regionId);
+    if (!region) throw new BadRequestError('Region not found');
+
+    const refNo = await leadRepository.nextSteppedRefNo(region.code);
+    const id = await generateId('LEAD');
+    const lead = await leadRepository.createStepped({
+      ...input,
+      id,
+      refNo,
+      regionId,
+      ownerId: actor.id,
+      createdBy: actor.id,
+    });
+    return { lead };
+  },
+
+  async saveStep2(id: string, actor: AuthUser, input: SaveStep2Input) {
+    const lead = await loadOwnedOrThrow(id, actor);
+    if (lead.currentStep !== 1) {
+      throw new BadRequestError('Step 2 can only be saved after Step 1 is complete');
+    }
+
+    const duplicates = await leadRepository.findDuplicates(
+      lead.regionId,
+      input.contactPhone || undefined,
+      input.contactEmail || undefined,
+    );
+
+    const updated = await leadRepository.updateStep2(id, {
+      contactName: input.contactName,
+      contactPhone: input.contactPhone || undefined,
+      contactEmail: input.contactEmail || undefined,
+      discussionNote: input.discussionNote,
+    });
+
+    return { lead: updated, duplicateWarning: duplicates.length > 0 ? duplicates.map((d) => d.refNo) : undefined };
+  },
+
+  async saveStep3(id: string, actor: AuthUser, input: SaveStep3Input) {
+    const lead = await loadOwnedOrThrow(id, actor);
+    if (lead.currentStep !== 2) {
+      throw new BadRequestError('Step 3 can only be saved after Step 2 is complete');
+    }
+
+    if (input.path === 'NOT_QUALIFIED') {
+      const updated = await leadRepository.updateStep3(id, {
+        status: LeadStatus.LOST,
+        lostReason: input.remark,
+        qualificationPath: 'NOT_QUALIFIED',
+      });
+      return { lead: updated };
+    }
+
+    if (input.path === 'FUTURE_POTENTIAL') {
+      const updated = await leadRepository.updateStep3(id, {
+        status: LeadStatus.NEW,
+        qualificationPath: 'FUTURE_POTENTIAL',
+      });
+      const followUp = await leadRepository.addFollowUp(id, {
+        note: input.remarks || 'Scheduled follow-up',
+        channel: 'meeting',
+        nextActionAt: input.followUpDate,
+        createdBy: actor.id,
+      });
+      return { lead: updated, followUp };
+    }
+
+    // REQUIREMENT_IDENTIFIED
+    const updated = await leadRepository.updateStep3(id, {
+      status: LeadStatus.QUALIFIED,
+      qualificationPath: 'REQUIREMENT_IDENTIFIED',
+    });
+    const opportunity = await opportunityService.createFromLead(
+      { ...lead, contactName: lead.contactName ?? lead.companyName ?? '' },
+      { dealType: input.dealType, value: input.quotationAmount },
+      actor,
+      {
+        initialQuotationRef: input.quotationRef,
+        initialQuotationDate: input.quotationDate,
+        initialQuotationAmount: input.quotationAmount,
+      },
+    );
+    return { lead: updated, opportunity };
   },
 };
 

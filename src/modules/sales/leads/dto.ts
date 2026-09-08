@@ -43,7 +43,7 @@ export const markLostSchema = z.object({
 export type MarkLostInput = z.infer<typeof markLostSchema>;
 
 export const qualifyLeadSchema = z.object({
-  dealType: z.enum(['INSTALLATION', 'AMC', 'PRODUCT']),
+  dealType: z.enum(['INSTALLATION', 'AMC', 'PRODUCT', 'MAINTENANCE']),
   value: z.coerce.number().positive(),
   expectedClose: z.coerce.date().optional(),
 });
@@ -86,3 +86,51 @@ export const listLeadFollowUpsQuerySchema = z.object({
   pageSize: z.coerce.number().int().positive().max(200).optional().default(50),
 });
 export type ListLeadFollowUpsQuery = z.infer<typeof listLeadFollowUpsQuerySchema>;
+
+// ---------- Stepped lead creation (3-step wizard) ----------
+
+export const saveStep1Schema = z.object({
+  companyName: z.string().min(1, 'Company name is required'),
+  remarks: z.string().max(1000).optional(),
+  gpsLatitude: z.coerce.number().min(-90).max(90).optional(),
+  gpsLongitude: z.coerce.number().min(-180).max(180).optional(),
+  visitLocation: z.string().max(300).optional(),
+});
+export type SaveStep1Input = z.infer<typeof saveStep1Schema>;
+
+export const saveStep2Schema = z
+  .object({
+    contactName: z.string().min(1, 'Customer name is required'),
+    contactPhone: z
+      .string()
+      .regex(MOBILE_REGEX, 'Enter a valid 10-digit mobile number')
+      .optional()
+      .or(z.literal('')),
+    contactEmail: z.string().email('Enter a valid email').optional().or(z.literal('')),
+    discussionNote: z.string().max(1000).optional(),
+  })
+  .refine((data) => !!data.contactPhone?.trim() || !!data.contactEmail?.trim(), {
+    message: 'At least one of phone or email is required',
+    path: ['contactPhone'],
+  });
+export type SaveStep2Input = z.infer<typeof saveStep2Schema>;
+
+export const saveStep3Schema = z.discriminatedUnion('path', [
+  z.object({
+    path: z.literal('NOT_QUALIFIED'),
+    remark: z.string().min(1, 'Remark is required'),
+  }),
+  z.object({
+    path: z.literal('FUTURE_POTENTIAL'),
+    followUpDate: z.coerce.date(),
+    remarks: z.string().max(1000).optional(),
+  }),
+  z.object({
+    path: z.literal('REQUIREMENT_IDENTIFIED'),
+    dealType: z.enum(['INSTALLATION', 'AMC', 'MAINTENANCE']),
+    quotationRef: z.string().min(1, 'Quotation number is required'),
+    quotationDate: z.coerce.date(),
+    quotationAmount: z.coerce.number().positive('Amount must be positive'),
+  }),
+]);
+export type SaveStep3Input = z.infer<typeof saveStep3Schema>;

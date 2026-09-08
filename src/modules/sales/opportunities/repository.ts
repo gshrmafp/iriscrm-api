@@ -107,6 +107,9 @@ export const opportunityRepository = {
     regionId: string;
     ownerId: string;
     createdBy: string;
+    initialQuotationRef?: string;
+    initialQuotationDate?: Date;
+    initialQuotationAmount?: number;
   }) {
     return prisma.$transaction(async (tx) => {
       const opportunity = await tx.opportunity.create({
@@ -119,6 +122,9 @@ export const opportunityRepository = {
           ownerId: input.ownerId,
           createdBy: input.createdBy,
           probability: STAGE_PROBABILITY.NEW,
+          initialQuotationRef: input.initialQuotationRef,
+          initialQuotationDate: input.initialQuotationDate,
+          initialQuotationAmount: input.initialQuotationAmount,
         },
       });
       await tx.opportunityStageHistory.create({

@@ -14,6 +14,9 @@ import {
   listLeadsQuerySchema,
   markLostSchema,
   qualifyLeadSchema,
+  saveStep1Schema,
+  saveStep2Schema,
+  saveStep3Schema,
 } from './dto';
 
 export const leadRouter = Router();
@@ -116,6 +119,112 @@ leadRouter.get(
   requirePermission(PERMISSIONS.SALES_LEAD_VIEW),
   validateQuery(listLeadsQuerySchema),
   asyncHandler(leadController.list),
+);
+
+/**
+ * @openapi
+ * /leads/stepped:
+ *   post:
+ *     summary: Create a lead via stepped wizard — Step 1 (site visit)
+ *     tags: [Leads]
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [companyName]
+ *             properties:
+ *               companyName: { type: string, example: "Acme Corp" }
+ *               remarks: { type: string, description: "Observation/remarks, max 1000 chars" }
+ *               gpsLatitude: { type: number, example: 28.4595 }
+ *               gpsLongitude: { type: number, example: 77.0266 }
+ *               visitLocation: { type: string }
+ *     responses:
+ *       201: { description: Created }
+ */
+leadRouter.post(
+  '/leads/stepped',
+  requireAuth,
+  requirePermission(PERMISSIONS.SALES_LEAD_CREATE),
+  validateBody(saveStep1Schema),
+  asyncHandler(leadController.createStepped),
+);
+
+/**
+ * @openapi
+ * /leads/{id}/step-2:
+ *   patch:
+ *     summary: Stepped wizard — Step 2 (contact details)
+ *     tags: [Leads]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [contactName]
+ *             properties:
+ *               contactName: { type: string, example: "John Doe" }
+ *               contactPhone: { type: string, example: "9999999999" }
+ *               contactEmail: { type: string, example: "john@acme.com" }
+ *               discussionNote: { type: string }
+ *     responses:
+ *       200: { description: OK }
+ */
+leadRouter.patch(
+  '/leads/:id/step-2',
+  requireAuth,
+  requirePermission(PERMISSIONS.SALES_LEAD_CREATE),
+  validateBody(saveStep2Schema),
+  asyncHandler(leadController.saveStep2),
+);
+
+/**
+ * @openapi
+ * /leads/{id}/step-3:
+ *   patch:
+ *     summary: Stepped wizard — Step 3 (qualification)
+ *     tags: [Leads]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [path]
+ *             properties:
+ *               path: { type: string, enum: [NOT_QUALIFIED, FUTURE_POTENTIAL, REQUIREMENT_IDENTIFIED] }
+ *               remark: { type: string, description: "Required for NOT_QUALIFIED" }
+ *               followUpDate: { type: string, format: date-time, description: "Required for FUTURE_POTENTIAL" }
+ *               remarks: { type: string, description: "Optional for FUTURE_POTENTIAL" }
+ *               dealType: { type: string, enum: [INSTALLATION, AMC, MAINTENANCE], description: "Required for REQUIREMENT_IDENTIFIED" }
+ *               quotationRef: { type: string, description: "Required for REQUIREMENT_IDENTIFIED" }
+ *               quotationDate: { type: string, format: date-time, description: "Required for REQUIREMENT_IDENTIFIED" }
+ *               quotationAmount: { type: number, description: "Required for REQUIREMENT_IDENTIFIED" }
+ *     responses:
+ *       200: { description: OK }
+ *       201: { description: Created (when opportunity is created) }
+ */
+leadRouter.patch(
+  '/leads/:id/step-3',
+  requireAuth,
+  requirePermission(PERMISSIONS.SALES_LEAD_CREATE),
+  validateBody(saveStep3Schema),
+  asyncHandler(leadController.saveStep3),
 );
 
 /**

@@ -27,7 +27,12 @@ async function loadOwnedOrThrow(id: string, actor: AuthUser) {
 
 export const opportunityService = {
   // Called from leads/service.qualify — lead is already loaded/ownership-checked there.
-  createFromLead(lead: Lead, input: QualifyLeadInput, actor: AuthUser) {
+  createFromLead(
+    lead: Lead,
+    input: QualifyLeadInput,
+    actor: AuthUser,
+    quickQuotation?: { initialQuotationRef?: string; initialQuotationDate?: Date; initialQuotationAmount?: number },
+  ) {
     return opportunityRepository.createFromLead({
       leadId: lead.id,
       dealType: input.dealType as DealType,
@@ -36,6 +41,7 @@ export const opportunityService = {
       regionId: lead.regionId,
       ownerId: lead.ownerId,
       createdBy: actor.id,
+      ...quickQuotation,
     });
   },
 

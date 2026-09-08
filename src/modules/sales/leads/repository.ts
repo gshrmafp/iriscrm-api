@@ -1,6 +1,6 @@
 import { LeadStatus, Prisma } from '@prisma/client';
 import { prisma } from '../../../core/db/prisma';
-import { AddFollowUpInput, CreateLeadInput, ListLeadFollowUpsQuery, ListLeadsQuery } from './dto';
+import { AddFollowUpInput, CreateLeadInput, ListLeadFollowUpsQuery, ListLeadsQuery, SaveStep1Input } from './dto';
 
 export const leadRepository = {
   async list(
@@ -193,5 +193,65 @@ export const leadRepository = {
     }).length;
 
     return { activeCount: activeLeads.length, needAttentionCount };
+  },
+
+  // ---------- Stepped lead creation ----------
+
+  async nextSteppedRefNo(regionCode: string) {
+    const seqKey = `LEAD_REF_${regionCode}`;
+    const seq = await prisma.$transaction(async (tx) => {
+      return tx.sequence.upsert({
+        where: { id: seqKey },
+        update: { nextValue: { increment: 1 } },
+        create: { id: seqKey, nextValue: 2 },
+      });
+    });
+    return `${regionCode}${seq.nextValue - 1}`;
+  },
+
+  createStepped(data: SaveStep1Input & { id: string; refNo: string; regionId: string; ownerId: string; createdBy: string }) {
+    return prisma.lead.create({
+      data: {
+        id: data.id,
+        refNo: data.refNo,
+        companyName: data.companyName,
+        gpsLatitude: data.gpsLatitude,
+        gpsLongitude: data.gpsLongitude,
+        visitLocation: data.visitLocation,
+        remarks: data.remarks,
+        currentStep: 1,
+        step1CompletedAt: new Date(),
+        regionId: data.regionId,
+        ownerId: data.ownerId,
+        createdBy: data.createdBy,
+      },
+    });
+  },
+
+  updateStep2(id: string, data: { contactName: string; contactPhone?: string; contactEmail?: string; discussionNote?: string }) {
+    return prisma.lead.update({
+      where: { id },
+      data: {
+        contactName: data.contactName,
+        contactPhone: data.contactPhone || null,
+        contactEmail: data.contactEmail || null,
+        discussionNote: data.discussionNote,
+        currentStep: 2,
+        step2CompletedAt: new Date(),
+      },
+    });
+  },
+
+  updateStep3(id: string, data: { status: LeadStatus; lostReason?: string; qualificationPath: string }) {
+    return prisma.lead.update({
+      where: { id },
+      data: {
+        status: data.status,
+        lostReason: data.lostReason,
+        qualificationPath: data.qualificationPath,
+        currentStep: 3,
+        step3CompletedAt: new Date(),
+      },
+    });
   },
 };
