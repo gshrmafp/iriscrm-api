@@ -265,8 +265,10 @@ enum DealType {
 enum OpportunityStage {
   NEW
   CONTACTED
+  QUALIFIED
   QUOTED
   NEGOTIATION
+  MEETING
   WON
   LOST
 }

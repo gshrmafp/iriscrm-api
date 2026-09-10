@@ -39,7 +39,7 @@ export const opportunityRouter = Router();
  *         schema: { type: string, enum: [asc, desc], default: desc }
  *       - in: query
  *         name: stage
- *         schema: { type: string, enum: [NEW, CONTACTED, QUOTED, NEGOTIATION, WON, LOST] }
+ *         schema: { type: string, enum: [NEW, CONTACTED, QUALIFIED, QUOTED, NEGOTIATION, MEETING, WON, LOST] }
  *       - in: query
  *         name: dealType
  *         schema: { type: string, enum: [INSTALLATION, AMC, PRODUCT] }
@@ -130,7 +130,7 @@ opportunityRouter.get(
  *             properties:
  *               toStage:
  *                 type: string
- *                 enum: [NEW, CONTACTED, QUOTED, NEGOTIATION, WON, LOST]
+ *                 enum: [NEW, CONTACTED, QUALIFIED, QUOTED, NEGOTIATION, MEETING, WON, LOST]
  *                 example: "CONTACTED"
  *               remark: { type: string }
  *     responses:

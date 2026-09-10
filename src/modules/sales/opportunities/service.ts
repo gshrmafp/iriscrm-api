@@ -100,8 +100,8 @@ export const opportunityService = {
   // real AMC/Project modules (Section 8 hand-off table).
   async win(id: string, actor: AuthUser, input: WinInput) {
     const opportunity = await loadOwnedOrThrow(id, actor);
-    if (opportunity.stage !== OpportunityStage.NEGOTIATION && opportunity.stage !== OpportunityStage.QUOTED) {
-      throw new BadRequestError('Opportunity must be in Quoted or Negotiation stage to win');
+    if (opportunity.stage !== OpportunityStage.NEGOTIATION && opportunity.stage !== OpportunityStage.QUOTED && opportunity.stage !== OpportunityStage.MEETING) {
+      throw new BadRequestError('Opportunity must be in Quotation, Follow-ups, or Meeting stage to win');
     }
 
     const latestQuote = await quotationService.getLatestAcceptedTotal(id);

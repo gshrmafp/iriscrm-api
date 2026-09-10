@@ -76,7 +76,10 @@ export const leadRepository = {
   findById(id: string) {
     return prisma.lead.findFirst({
       where: { id, deletedAt: null },
-      include: { followUps: { orderBy: { createdAt: 'desc' } }, opportunity: true },
+      include: {
+        followUps: { orderBy: { createdAt: 'desc' } },
+        opportunity: { include: { stageHistory: { orderBy: { createdAt: 'asc' } } } },
+      },
     });
   },
 
