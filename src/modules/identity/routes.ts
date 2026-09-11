@@ -6,12 +6,14 @@ import { validateBody, validateQuery } from '../../core/middleware/validate';
 import { PERMISSIONS } from '../../config/permissions';
 import { identityController } from './controller';
 import {
+  changePasswordSchema,
   createRegionSchema,
   createUserSchema,
   listUsersQuerySchema,
   loginSchema,
   permissionOverrideSchema,
   refreshSchema,
+  updateMyProfileSchema,
   updateRegionSchema,
   updateUserSchema,
   updateUserStatusSchema,
@@ -108,6 +110,66 @@ identityRouter.patch(
  *       401: { description: Invalid credentials }
  */
 identityRouter.post('/auth/login', validateBody(loginSchema), asyncHandler(identityController.login));
+
+/**
+ * @openapi
+ * /auth/me:
+ *   get:
+ *     summary: Get the current user's own profile
+ *     tags: [Identity]
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200: { description: OK }
+ *   patch:
+ *     summary: Update the current user's own profile (name, email)
+ *     tags: [Identity]
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name: { type: string }
+ *               email: { type: string }
+ *     responses:
+ *       200: { description: OK }
+ */
+identityRouter.get('/auth/me', requireAuth, asyncHandler(identityController.getMe));
+identityRouter.patch(
+  '/auth/me',
+  requireAuth,
+  validateBody(updateMyProfileSchema),
+  asyncHandler(identityController.updateMe),
+);
+
+/**
+ * @openapi
+ * /auth/change-password:
+ *   post:
+ *     summary: Change the current user's password
+ *     tags: [Identity]
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [currentPassword, newPassword]
+ *             properties:
+ *               currentPassword: { type: string }
+ *               newPassword: { type: string, minLength: 8 }
+ *     responses:
+ *       200: { description: OK }
+ */
+identityRouter.post(
+  '/auth/change-password',
+  requireAuth,
+  validateBody(changePasswordSchema),
+  asyncHandler(identityController.changePassword),
+);
 
 /**
  * @openapi

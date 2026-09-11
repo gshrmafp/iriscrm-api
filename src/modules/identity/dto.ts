@@ -60,6 +60,22 @@ export const permissionOverrideSchema = z.object({
 });
 export type PermissionOverrideInput = z.infer<typeof permissionOverrideSchema>;
 
+// ---------- Self-service profile ----------
+
+export const updateMyProfileSchema = z
+  .object({
+    name: z.string().min(1).optional(),
+    email: z.string().email().optional(),
+  })
+  .refine((data) => Object.keys(data).length > 0, { message: 'No fields to update' });
+export type UpdateMyProfileInput = z.infer<typeof updateMyProfileSchema>;
+
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z.string().min(8),
+});
+export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
+
 // ---------- Listing with pagination + filters ----------
 
 export const listUsersQuerySchema = z.object({

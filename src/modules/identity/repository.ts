@@ -11,6 +11,13 @@ export const identityRepository = {
     return prisma.user.findUnique({ where: { id } });
   },
 
+  findUserWithRegion(id: string) {
+    return prisma.user.findUnique({
+      where: { id },
+      include: { region: { select: { code: true, name: true } } },
+    });
+  },
+
   createUser(input: CreateUserInput & { id: string, passwordHash: string }) {
     return prisma.user.create({
       data: {
@@ -126,6 +133,10 @@ export const identityRepository = {
 
   updateUser(id: string, data: UpdateUserInput) {
     return prisma.user.update({ where: { id }, data });
+  },
+
+  updateUserPassword(id: string, passwordHash: string) {
+    return prisma.user.update({ where: { id }, data: { passwordHash } });
   },
 };
 

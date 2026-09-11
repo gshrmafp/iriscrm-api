@@ -9,11 +9,13 @@ import { generateId } from '../../core/utils/idGenerator';
 import { ROLE_DEFAULT_PERMISSIONS, CROSS_REGION_ROLES } from '../../config/permissions';
 import { identityRepository } from './repository';
 import {
+  ChangePasswordInput,
   CreateRegionInput,
   CreateUserInput,
   ListUsersQuery,
   LoginInput,
   PermissionOverrideInput,
+  UpdateMyProfileInput,
   UpdateRegionInput,
   UpdateUserInput,
   UpdateUserStatusInput,
@@ -42,6 +44,39 @@ export const identityService = {
       refreshToken: signRefreshToken(user),
       user: { id: user.id, name: user.name, email: user.email, role: user.role, regionId: user.regionId },
     };
+  },
+
+  async getMe(actorId: string) {
+    const user = await identityRepository.findUserWithRegion(actorId);
+    if (!user) throw new NotFoundError('User not found');
+    const { passwordHash: _omit, ...safeUser } = user;
+    return safeUser;
+  },
+
+  async updateMe(actorId: string, input: UpdateMyProfileInput) {
+    const user = await identityRepository.findUserById(actorId);
+    if (!user) throw new NotFoundError('User not found');
+
+    if (input.email && input.email !== user.email) {
+      const existing = await identityRepository.findUserByEmail(input.email);
+      if (existing && existing.id !== actorId) throw new ConflictError('Email already in use');
+    }
+
+    const updated = await identityRepository.updateUser(actorId, input);
+    const { passwordHash: _omit, ...safeUser } = updated;
+    return safeUser;
+  },
+
+  async changePassword(actorId: string, input: ChangePasswordInput) {
+    const user = await identityRepository.findUserById(actorId);
+    if (!user) throw new NotFoundError('User not found');
+
+    const passwordOk = await argon2.verify(user.passwordHash, input.currentPassword);
+    if (!passwordOk) throw new UnauthorizedError('Current password is incorrect');
+
+    const newHash = await argon2.hash(input.newPassword);
+    await identityRepository.updateUserPassword(actorId, newHash);
+    return { message: 'Password changed successfully' };
   },
 
   async refresh(refreshToken: string) {

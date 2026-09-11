@@ -10,6 +10,24 @@ export const identityController = {
     ok(res, result);
   },
 
+  async getMe(req: Request, res: Response) {
+    if (!req.user) throw new UnauthorizedError();
+    const user = await identityService.getMe(req.user.id);
+    ok(res, user);
+  },
+
+  async updateMe(req: Request, res: Response) {
+    if (!req.user) throw new UnauthorizedError();
+    const user = await identityService.updateMe(req.user.id, req.body);
+    ok(res, user);
+  },
+
+  async changePassword(req: Request, res: Response) {
+    if (!req.user) throw new UnauthorizedError();
+    const result = await identityService.changePassword(req.user.id, req.body);
+    ok(res, result);
+  },
+
   async refresh(req: Request, res: Response) {
     const result = await identityService.refresh(req.body.refreshToken);
     ok(res, result);
