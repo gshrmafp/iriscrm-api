@@ -1,10 +1,5 @@
 import { Role } from "@prisma/client";
 
-/**
- * Flat permission-key registry. Every module route declares the key(s) it needs
- * via requirePermission(). New modules add their own keys here — never invent
- * ad-hoc strings inline in a route file.
- */
 export const PERMISSIONS = {
   IDENTITY_REGION_CONFIGURE: "identity.region.configure",
   IDENTITY_USER_MANAGE: "identity.user.manage",
