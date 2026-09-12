@@ -1,0 +1,40 @@
+name: Deploy Backend to EC2
+
+on:
+  push:
+    branches:
+      - production
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script_stop: true
+          script: |
+            cd /var/www/iris/backend
+
+            echo "Pulling latest code..."
+            git pull origin production
+
+            echo "Installing dependencies..."
+            npm ci --omit=dev
+
+            echo "Running database migrations..."
+            npx prisma migrate deploy
+
+            echo "Generating Prisma client..."
+            npx prisma generate
+
+            echo "Building..."
+            npm run build
+
+            echo "Restarting backend..."
+            pm2 restart iris-backend
+
+            echo "Deploy complete!"
