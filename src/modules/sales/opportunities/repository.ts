@@ -62,7 +62,7 @@ export const opportunityRepository = {
     let pipelineValue = 0;
     let weightedForecast = 0;
     for (const s of byStage) {
-      if (s.stage === OpportunityStage.WON || s.stage === OpportunityStage.LOST) continue;
+      if (s.stage === OpportunityStage.PURCHASE_ORDER || s.stage === OpportunityStage.LOST) continue;
       openCount += s.count;
       pipelineValue += s.value;
       weightedForecast += s.value * (STAGE_PROBABILITY[s.stage] / 100);
@@ -121,14 +121,15 @@ export const opportunityRepository = {
           regionId: input.regionId,
           ownerId: input.ownerId,
           createdBy: input.createdBy,
-          probability: STAGE_PROBABILITY.NEW,
+          stage: OpportunityStage.QUOTATION,
+          probability: STAGE_PROBABILITY.QUOTATION,
           initialQuotationRef: input.initialQuotationRef,
           initialQuotationDate: input.initialQuotationDate,
           initialQuotationAmount: input.initialQuotationAmount,
         },
       });
       await tx.opportunityStageHistory.create({
-        data: { opportunityId: opportunity.id, toStage: OpportunityStage.NEW, actorId: input.createdBy },
+        data: { opportunityId: opportunity.id, toStage: OpportunityStage.QUOTATION, actorId: input.createdBy },
       });
       return opportunity;
     });
@@ -187,14 +188,25 @@ export const opportunityRepository = {
     return prisma.$transaction(async (tx) => {
       const opportunity = await tx.opportunity.update({
         where: { id: params.opportunityId },
-        data: { stage: OpportunityStage.WON, wonAt: new Date(), probability: STAGE_PROBABILITY.WON },
+        data: {
+          stage: OpportunityStage.PURCHASE_ORDER,
+          wonAt: new Date(),
+          probability: STAGE_PROBABILITY.PURCHASE_ORDER,
+          poNumber: params.input.poNumber,
+          poDate: params.input.poDate,
+          poAmount: params.input.poAmount,
+          poRemarks: params.input.poRemarks,
+          poGpsLatitude: params.input.poGpsLatitude,
+          poGpsLongitude: params.input.poGpsLongitude,
+          poLocation: params.input.poLocation,
+        },
       });
 
       await tx.opportunityStageHistory.create({
         data: {
           opportunityId: params.opportunityId,
           fromStage: params.fromStage,
-          toStage: OpportunityStage.WON,
+          toStage: OpportunityStage.PURCHASE_ORDER,
           actorId: params.createdBy,
         },
       });

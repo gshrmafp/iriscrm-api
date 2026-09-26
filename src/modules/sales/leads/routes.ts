@@ -8,12 +8,10 @@ import { createEntityCommentSchema, updateEntityCommentSchema } from '../../comm
 import { leadController } from './controller';
 import {
   addFollowUpSchema,
-  createLeadSchema,
+  addMeetingSchema,
   leadStatusSummaryQuerySchema,
   listLeadFollowUpsQuerySchema,
   listLeadsQuerySchema,
-  markLostSchema,
-  qualifyLeadSchema,
   saveStep1Schema,
   saveStep2Schema,
   saveStep3Schema,
@@ -24,41 +22,6 @@ export const leadRouter = Router();
 /**
  * @openapi
  * /leads:
- *   post:
- *     summary: Capture a lead (SM-1.1..SM-1.6)
- *     tags: [Leads]
- *     security: [{ bearerAuth: [] }]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required: [contactName, source]
- *             properties:
- *               contactName: { type: string, example: "Acme Corp" }
- *               companyName: { type: string }
- *               contactPhone: { type: string, example: "9999999999", description: "10-digit Indian mobile number, optional +91/0 prefix" }
- *               contactEmail: { type: string, example: "buyer@acme.com" }
- *               address: { type: string, description: "Contact/company address, max 500 characters" }
- *               gpsLatitude: { type: number, example: 28.4595 }
- *               gpsLongitude: { type: number, example: 77.0266 }
- *               visitLocation: { type: string, description: "Reverse-geocoded label for gpsLatitude/gpsLongitude" }
- *               source:
- *                 type: string
- *                 description: Code of an active Lead Source picklist option (GET /picklists?listType=LEAD_SOURCE) — admin-managed, not a fixed enum.
- *                 example: "WEB_FORM"
- *               sourceOther: { type: string, description: "Required when source is OTHER" }
- *               productInterest:
- *                 type: string
- *                 description: Code of an active Product Interest picklist option (GET /picklists?listType=PRODUCT_INTEREST), optional.
- *                 example: "CCTV_INSTALLATION"
- *               productInterestOther: { type: string, description: "Required when productInterest is OTHER" }
- *               notes: { type: string, description: "Max 400 characters" }
- *               regionId: { type: string, description: "Admin override only" }
- *               ownerId: { type: string, description: "Defaults to the creator" }
- *     responses:
- *       201: { description: Created }
  *   get:
  *     summary: List leads visible to the caller (own / team / region / all by role), paginated
  *     tags: [Leads]
@@ -81,14 +44,8 @@ export const leadRouter = Router();
  *         schema: { type: string, enum: [NEW, QUALIFIED, LOST] }
  *       - in: query
  *         name: opportunityStage
- *         description: Filters by the linked Opportunity's stage (e.g. QUOTED) instead of the lead's own status.
- *         schema: { type: string, enum: [NEW, CONTACTED, QUOTED, NEGOTIATION, WON, LOST] }
- *       - in: query
- *         name: source
- *         schema: { type: string }
- *       - in: query
- *         name: productInterest
- *         schema: { type: string }
+ *         description: Filters by the linked Opportunity's stage instead of the lead's own status.
+ *         schema: { type: string, enum: [QUOTATION, FOLLOWUP, MEETING, PURCHASE_ORDER, LOST] }
  *       - in: query
  *         name: ownerId
  *         schema: { type: string }
@@ -106,13 +63,6 @@ export const leadRouter = Router();
  *       200:
  *         description: "Paginated result: { data: { items, total, page, pageSize, totalPages } }"
  */
-leadRouter.post(
-  '/leads',
-  requireAuth,
-  requirePermission(PERMISSIONS.SALES_LEAD_CREATE),
-  validateBody(createLeadSchema),
-  asyncHandler(leadController.create),
-);
 leadRouter.get(
   '/leads',
   requireAuth,
@@ -134,13 +84,13 @@ leadRouter.get(
  *         application/json:
  *           schema:
  *             type: object
- *             required: [companyName]
+ *             required: [companyName, remarks, gpsLatitude, gpsLongitude, visitLocation]
  *             properties:
  *               companyName: { type: string, example: "Acme Corp" }
- *               remarks: { type: string, description: "Observation/remarks, max 1000 chars" }
+ *               remarks: { type: string, description: "Observation/remarks, required, max 400 chars" }
  *               gpsLatitude: { type: number, example: 28.4595 }
  *               gpsLongitude: { type: number, example: 77.0266 }
- *               visitLocation: { type: string }
+ *               visitLocation: { type: string, description: "Reverse-geocoded location label, required" }
  *     responses:
  *       201: { description: Created }
  */
@@ -170,12 +120,12 @@ leadRouter.post(
  *         application/json:
  *           schema:
  *             type: object
- *             required: [contactName]
+ *             required: [contactName, contactPhone, discussionNote]
  *             properties:
  *               contactName: { type: string, example: "John Doe" }
- *               contactPhone: { type: string, example: "9999999999" }
- *               contactEmail: { type: string, example: "john@acme.com" }
- *               discussionNote: { type: string }
+ *               contactPhone: { type: string, example: "9999999999", description: "Required, 10-digit Indian mobile number" }
+ *               contactEmail: { type: string, example: "john@acme.com", description: "Optional" }
+ *               discussionNote: { type: string, description: "Required, max 400 chars" }
  *     responses:
  *       200: { description: OK }
  */
@@ -382,9 +332,9 @@ leadRouter.post(
 
 /**
  * @openapi
- * /leads/{id}/lost:
+ * /leads/{id}/meetings:
  *   post:
- *     summary: Mark a lead Lost with a mandatory reason (SM-1.11)
+ *     summary: Log a physical meeting — discussion note + silently-captured GPS location. Loggable at any point in the lead's life, same as follow-ups. Advances the linked opportunity's stage to MEETING (never-regress).
  *     tags: [Leads]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
@@ -398,55 +348,21 @@ leadRouter.post(
  *         application/json:
  *           schema:
  *             type: object
- *             required: [reason]
+ *             required: [note]
  *             properties:
- *               reason:
- *                 type: string
- *                 enum: [price, competitor, no_budget, no_response, other]
- *                 example: "price"
- *     responses:
- *       200: { description: OK }
- */
-leadRouter.post(
-  '/leads/:id/lost',
-  requireAuth,
-  requirePermission(PERMISSIONS.SALES_LEAD_CREATE),
-  validateBody(markLostSchema),
-  asyncHandler(leadController.markLost),
-);
-
-/**
- * @openapi
- * /leads/{id}/qualify:
- *   post:
- *     summary: Convert a lead into an Opportunity (SM-1.7)
- *     tags: [Leads]
- *     security: [{ bearerAuth: [] }]
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema: { type: string }
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required: [dealType, value]
- *             properties:
- *               dealType: { type: string, enum: [INSTALLATION, AMC, PRODUCT], example: "INSTALLATION" }
- *               value: { type: number, example: 40000 }
- *               expectedClose: { type: string, format: date-time }
+ *               note: { type: string, description: "What was discussed, required, max 400 chars" }
+ *               gpsLatitude: { type: number, example: 28.4595 }
+ *               gpsLongitude: { type: number, example: 77.0266 }
+ *               visitLocation: { type: string, description: "Reverse-geocoded location label" }
  *     responses:
  *       201: { description: Created }
  */
 leadRouter.post(
-  '/leads/:id/qualify',
+  '/leads/:id/meetings',
   requireAuth,
   requirePermission(PERMISSIONS.SALES_LEAD_CREATE),
-  validateBody(qualifyLeadSchema),
-  asyncHandler(leadController.qualify),
+  validateBody(addMeetingSchema),
+  asyncHandler(leadController.addMeeting),
 );
 
 /**

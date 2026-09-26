@@ -42,9 +42,15 @@ describe('Lead comment — @mention notifications', () => {
     managerToken = await login(manager.email, managerPw);
 
     const createRes = await request(app)
-      .post('/api/v1/leads')
+      .post('/api/v1/leads/stepped')
       .set('Authorization', `Bearer ${execToken}`)
-      .send({ contactName: 'Mention Test Customer', source: 'MANUAL' });
+      .send({
+        companyName: 'Mention Test Customer',
+        remarks: 'Site visit remarks',
+        gpsLatitude: 28.4595,
+        gpsLongitude: 77.0266,
+        visitLocation: 'Sector 21, Gurugram',
+      });
     leadId = createRes.body.data.lead.id;
   });
 

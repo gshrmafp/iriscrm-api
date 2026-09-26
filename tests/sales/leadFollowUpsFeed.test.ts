@@ -24,15 +24,22 @@ describe('GET /leads/follow-ups — cross-lead follow-up feed', () => {
     const { user: exec, password } = await createTestUser(Role.SALES_EXECUTIVE, regionId, 'followup-exec');
     execToken = await login(exec.email, password);
 
+    const stepOneBody = {
+      companyName: 'Lead One',
+      remarks: 'Site visit remarks',
+      gpsLatitude: 28.4595,
+      gpsLongitude: 77.0266,
+      visitLocation: 'Sector 21, Gurugram',
+    };
     const leadOne = await request(app)
-      .post('/api/v1/leads')
+      .post('/api/v1/leads/stepped')
       .set('Authorization', `Bearer ${execToken}`)
-      .send({ contactName: 'Lead One', source: 'MANUAL' });
+      .send(stepOneBody);
     leadOneId = leadOne.body.data.lead.id;
     const leadTwo = await request(app)
-      .post('/api/v1/leads')
+      .post('/api/v1/leads/stepped')
       .set('Authorization', `Bearer ${execToken}`)
-      .send({ contactName: 'Lead Two', source: 'MANUAL' });
+      .send({ ...stepOneBody, companyName: 'Lead Two' });
     leadTwoId = leadTwo.body.data.lead.id;
 
     await request(app)
@@ -58,7 +65,7 @@ describe('GET /leads/follow-ups — cross-lead follow-up feed', () => {
     expect(res.status).toBe(200);
     expect(res.body.data.items).toHaveLength(2);
     expect(res.body.data.items[0].lead.id).toBe(leadOneId); // has nextActionAt, sorts before the null one
-    expect(res.body.data.items[0].lead.contactName).toBe('Lead One');
+    expect(res.body.data.items[0].lead.companyName).toBe('Lead One');
     expect(res.body.data.items[1].lead.id).toBe(leadTwoId);
   });
 

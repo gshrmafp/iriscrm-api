@@ -1,6 +1,15 @@
 import { z } from 'zod';
 import { DealType, OpportunityStage } from '@prisma/client';
 
+// Fields needed to create an Opportunity from a qualified lead (Step 3 —
+// REQUIREMENT_IDENTIFIED path). Not a request-body schema of its own; the
+// actual validated input comes from leads/dto.ts's saveStep3Schema.
+export interface CreateOpportunityInput {
+  dealType: DealType | 'INSTALLATION' | 'AMC' | 'MAINTENANCE';
+  value: number;
+  expectedClose?: Date;
+}
+
 export const transitionStageSchema = z.object({
   toStage: z.nativeEnum(OpportunityStage),
   remark: z.string().optional(),
@@ -18,6 +27,14 @@ export const markLostSchema = z.object({
 export type MarkOppLostInput = z.infer<typeof markLostSchema>;
 
 export const winSchema = z.object({
+  // Purchase Order — required to close a deal as won
+  poNumber: z.string().min(1, 'PO number is required'),
+  poDate: z.coerce.date(),
+  poAmount: z.coerce.number().positive('PO amount must be positive'),
+  poRemarks: z.string().max(1000).optional(),
+  poGpsLatitude: z.coerce.number().min(-90).max(90).optional(),
+  poGpsLongitude: z.coerce.number().min(-180).max(180).optional(),
+  poLocation: z.string().max(300).optional(),
   // Installation hand-off
   site: z.string().optional(),
   bom: z.array(z.object({ catalogItemId: z.string(), qty: z.number().positive() })).optional(),

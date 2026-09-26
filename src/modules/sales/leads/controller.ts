@@ -6,12 +6,6 @@ import { leadService } from './service';
 import { LeadStatusSummaryQuery, ListLeadFollowUpsQuery, ListLeadsQuery } from './dto';
 
 export const leadController = {
-  async create(req: Request, res: Response) {
-    if (!req.user) throw new UnauthorizedError();
-    const result = await leadService.create(req.user, req.body);
-    ok(res, result, 201);
-  },
-
   async list(req: Request, res: Response) {
     if (!req.user) throw new UnauthorizedError();
     const filters = req.query as unknown as ListLeadsQuery;
@@ -51,14 +45,9 @@ export const leadController = {
     ok(res, await leadService.completeFollowUp(req.params.followUpId, req.user));
   },
 
-  async markLost(req: Request, res: Response) {
+  async addMeeting(req: Request, res: Response) {
     if (!req.user) throw new UnauthorizedError();
-    ok(res, await leadService.markLost(req.params.id, req.user, req.body));
-  },
-
-  async qualify(req: Request, res: Response) {
-    if (!req.user) throw new UnauthorizedError();
-    ok(res, await leadService.qualify(req.params.id, req.user, req.body), 201);
+    ok(res, await leadService.addMeeting(req.params.id, req.user, req.body), 201);
   },
 
   // Stepped lead creation

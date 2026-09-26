@@ -136,7 +136,6 @@ model Customer {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  leads        Lead[]
   amcContracts AmcContract[]
   projects     Project[]
   salesQueries SalesQuery[]
@@ -181,42 +180,35 @@ enum LeadStatus {
 }
 
 model Lead {
-  id              String     @id
-  refNo           String     @unique // region-prefixed, e.g. GGN-L-000123
-  customerId      String?
-  customer        Customer?  @relation(fields: [customerId], references: [id])
-  contactName     String?
-  companyName     String?
-  contactPhone    String?
-  contactEmail    String?
-  address         String? // manually entered — the contact/company's address
-  gpsLatitude     Decimal?   @db.Decimal(10, 7)
-  gpsLongitude    Decimal?   @db.Decimal(10, 7)
-  visitLocation   String? // reverse-geocoded label for gpsLatitude/gpsLongitude
-  source          String?
-  sourceOther     String? // free-text detail when source's picklist code is OTHER
-  productInterest String?
-  productInterestOther String? // free-text detail when productInterest's picklist code is OTHER
-  notes           String? // max 400 chars, enforced by createLeadSchema/updateLeadSchema
-  status          LeadStatus @default(NEW)
-  lostReason      String?
-  currentStep      Int        @default(1)
-  step1CompletedAt DateTime?
-  step2CompletedAt DateTime?
-  step3CompletedAt DateTime?
-  remarks          String?
-  discussionNote   String?
+  id                String     @id
+  refNo             String     @unique // region-prefixed, e.g. GGN-L-000123
+  contactName       String?
+  companyName       String?
+  contactPhone      String?
+  contactEmail      String?
+  gpsLatitude       Decimal?   @db.Decimal(10, 7)
+  gpsLongitude      Decimal?   @db.Decimal(10, 7)
+  visitLocation     String? // reverse-geocoded label for gpsLatitude/gpsLongitude
+  status            LeadStatus @default(NEW)
+  lostReason        String?
+  currentStep       Int        @default(1)
+  step1CompletedAt  DateTime?
+  step2CompletedAt  DateTime?
+  step3CompletedAt  DateTime?
+  remarks           String? // Step 1 site-visit remarks, required + max 400, enforced by saveStep1Schema
+  discussionNote    String? // Step 2 discussion note, required + max 400, enforced by saveStep2Schema
   qualificationPath String?
-  regionId        String
-  region          Region     @relation(fields: [regionId], references: [id])
-  ownerId         String
-  owner           User       @relation("LeadOwner", fields: [ownerId], references: [id])
-  createdBy       String
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
-  deletedAt       DateTime?
+  regionId          String
+  region            Region     @relation(fields: [regionId], references: [id])
+  ownerId           String
+  owner             User       @relation("LeadOwner", fields: [ownerId], references: [id])
+  createdBy         String
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+  deletedAt         DateTime?
 
   followUps          LeadFollowUp[]
+  meetings           LeadMeeting[]
   opportunity        Opportunity?
   convertedFromQuery SalesQuery?
 
@@ -233,22 +225,49 @@ enum FollowUpPriority {
   URGENT
 }
 
-// SM-1.9 / SM-1.10 — follow-up log with next-action reminder
+// SM-1.9 / SM-1.10 — follow-up log with next-action reminder. Loggable at any
+// point in the lead's life (before and after qualification into an Opportunity).
 model LeadFollowUp {
-  id           String           @id @default(cuid())
-  leadId       String
-  lead         Lead             @relation(fields: [leadId], references: [id])
-  note         String
-  channel      String // call | meeting | email
-  nextActionAt DateTime?
-  priority     FollowUpPriority @default(MEDIUM)
-  completedAt  DateTime?
-  createdBy    String
-  createdAt    DateTime         @default(now())
+  id            String           @id @default(cuid())
+  leadId        String
+  lead          Lead             @relation(fields: [leadId], references: [id])
+  note          String
+  channel       String // call | meeting | email
+  nextActionAt  DateTime?
+  priority      FollowUpPriority @default(MEDIUM)
+  completedAt   DateTime?
+  // Snapshot of the lead/opportunity's stage at the moment this was logged —
+  // NEW_LEAD | CONTACTED | QUOTATION | FOLLOWUP | MEETING | PURCHASE_ORDER | LOST.
+  // Powers the accordion-grouped Lead Journey view (each entry files under
+  // whichever stage was active when it was created, not the stage it's named after).
+  loggedAtStage String?
+  createdBy     String
+  createdAt     DateTime         @default(now())
 
   @@index([leadId])
   @@index([nextActionAt])
   @@map("lead_follow_ups")
+}
+
+// Physical meeting log — discussion note + silently-captured GPS location
+// (same auto-capture pattern as Step 1's site visit). Loggable at any point
+// in the lead's life, same as LeadFollowUp.
+model LeadMeeting {
+  id            String   @id @default(cuid())
+  leadId        String
+  lead          Lead     @relation(fields: [leadId], references: [id])
+  note          String // max 400 chars, enforced by addMeetingSchema
+  gpsLatitude   Decimal? @db.Decimal(10, 7)
+  gpsLongitude  Decimal? @db.Decimal(10, 7)
+  visitLocation String? // reverse-geocoded label
+  // Snapshot of the lead/opportunity's stage at the moment this was logged —
+  // see LeadFollowUp.loggedAtStage for the full explanation.
+  loggedAtStage String?
+  createdBy     String
+  createdAt     DateTime @default(now())
+
+  @@index([leadId])
+  @@map("lead_meetings")
 }
 
 // ---------------------------------------------------------------------------
@@ -263,38 +282,44 @@ enum DealType {
 }
 
 enum OpportunityStage {
-  NEW
-  CONTACTED
-  QUALIFIED
-  QUOTED
-  NEGOTIATION
+  QUOTATION
+  FOLLOWUP
   MEETING
-  WON
+  PURCHASE_ORDER
   LOST
 }
 
 model Opportunity {
-  id            String           @id @default(cuid())
-  leadId        String           @unique
-  lead          Lead             @relation(fields: [leadId], references: [id])
-  dealType      DealType
-  value         Decimal          @db.Decimal(14, 2)
-  stage         OpportunityStage @default(NEW)
-  probability   Int              @default(10) // % — configurable per stage
-  expectedClose DateTime?
-  lostReason    String?
-  wonAt         DateTime?
-  regionId      String
-  region        Region           @relation(fields: [regionId], references: [id])
-  ownerId       String
-  owner         User             @relation("OpportunityOwner", fields: [ownerId], references: [id])
-  createdBy     String
-  createdAt     DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
-  deletedAt     DateTime?
+  id                     String           @id @default(cuid())
+  leadId                 String           @unique
+  lead                   Lead             @relation(fields: [leadId], references: [id])
+  dealType               DealType
+  value                  Decimal          @db.Decimal(14, 2)
+  stage                  OpportunityStage @default(QUOTATION)
+  probability            Int              @default(50) // % — configurable per stage
+  expectedClose          DateTime?
+  lostReason             String?
+  wonAt                  DateTime?
+  regionId               String
+  region                 Region           @relation(fields: [regionId], references: [id])
+  ownerId                String
+  owner                  User             @relation("OpportunityOwner", fields: [ownerId], references: [id])
+  createdBy              String
+  createdAt              DateTime         @default(now())
+  updatedAt              DateTime         @updatedAt
+  deletedAt              DateTime?
   initialQuotationRef    String?
   initialQuotationDate   DateTime?
   initialQuotationAmount Decimal?         @db.Decimal(14, 2)
+
+  // Purchase Order — captured as part of the Win flow (SM-4.x)
+  poNumber       String?
+  poDate         DateTime?
+  poRemarks      String?
+  poGpsLatitude  Decimal?  @db.Decimal(10, 7)
+  poGpsLongitude Decimal?  @db.Decimal(10, 7)
+  poLocation     String?
+  poAmount       Decimal?  @db.Decimal(14, 2)
 
   stageHistory       OpportunityStageHistory[]
   quotations         Quotation[]

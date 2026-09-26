@@ -4,31 +4,6 @@ import { FollowUpPriority, LeadStatus, OpportunityStage } from '@prisma/client';
 // Indian mobile numbers: 10 digits starting 6-9, with an optional +91/91/0 STD-style prefix.
 const MOBILE_REGEX = /^(?:\+?91[-\s]?|0)?[6-9]\d{9}$/;
 
-export const createLeadSchema = z.object({
-  contactName: z.string().min(1, 'Contact name is required'),
-  companyName: z.string().optional(),
-  contactPhone: z
-    .string()
-    .regex(MOBILE_REGEX, 'Enter a valid 10-digit mobile number')
-    .optional()
-    .or(z.literal('')),
-  contactEmail: z.string().email('Enter a valid email').optional().or(z.literal('')),
-  address: z.string().max(500, 'Address must be under 500 characters').optional(),
-  gpsLatitude: z.coerce.number().min(-90).max(90).optional(),
-  gpsLongitude: z.coerce.number().min(-180).max(180).optional(),
-  visitLocation: z.string().max(300).optional(),
-  // Validated against active PicklistOption(LEAD_SOURCE/PRODUCT_INTEREST) codes
-  // in the service layer, so this list stays admin-configurable at runtime.
-  source: z.string().min(1, 'Source is required'),
-  sourceOther: z.string().max(200, 'Must be under 200 characters').optional(),
-  productInterest: z.string().optional(),
-  productInterestOther: z.string().max(200, 'Must be under 200 characters').optional(),
-  notes: z.string().max(400, 'Notes must be 400 characters or fewer').optional(),
-  regionId: z.string().optional(), // Admin may override; defaults to creator's region (SM-1.4)
-  ownerId: z.string().optional(), // defaults to creator
-});
-export type CreateLeadInput = z.infer<typeof createLeadSchema>;
-
 export const addFollowUpSchema = z.object({
   note: z.string().min(1),
   channel: z.enum(['call', 'meeting', 'email']),
@@ -37,30 +12,28 @@ export const addFollowUpSchema = z.object({
 });
 export type AddFollowUpInput = z.infer<typeof addFollowUpSchema>;
 
-export const markLostSchema = z.object({
-  reason: z.enum(['price', 'competitor', 'no_budget', 'no_response', 'other']),
+// Physical meeting log — note + silently-captured GPS (client sends whatever
+// it already has from the location permission granted post-login; none of
+// these are required so a meeting can still be logged if GPS is unavailable).
+export const addMeetingSchema = z.object({
+  note: z.string().min(1, 'Meeting note is required').max(400, 'Note must be 400 characters or fewer'),
+  gpsLatitude: z.coerce.number().min(-90).max(90).optional(),
+  gpsLongitude: z.coerce.number().min(-180).max(180).optional(),
+  visitLocation: z.string().max(300).optional(),
 });
-export type MarkLostInput = z.infer<typeof markLostSchema>;
-
-export const qualifyLeadSchema = z.object({
-  dealType: z.enum(['INSTALLATION', 'AMC', 'PRODUCT', 'MAINTENANCE']),
-  value: z.coerce.number().positive(),
-  expectedClose: z.coerce.date().optional(),
-});
-export type QualifyLeadInput = z.infer<typeof qualifyLeadSchema>;
+export type AddMeetingInput = z.infer<typeof addMeetingSchema>;
 
 // ---------- Listing with pagination + filters ----------
 
 export const listLeadsQuerySchema = z.object({
   status: z.nativeEnum(LeadStatus).optional(),
   // Filters by the linked Opportunity's stage instead of the Lead's own
-  // status — "Quoted" (and other post-qualification stages) live on
-  // Opportunity, not Lead, since a Lead converts into an Opportunity once
-  // qualified. Mutually exclusive with `status` in practice (a lead with an
-  // opportunity is already QUALIFIED), but both are applied if both are sent.
+  // status — post-qualification stages (Quotation/Followup/Meeting/Purchase
+  // Order) live on Opportunity, not Lead, since a Lead converts into an
+  // Opportunity once qualified. Mutually exclusive with `status` in practice
+  // (a lead with an opportunity is already QUALIFIED), but both are applied
+  // if both are sent.
   opportunityStage: z.nativeEnum(OpportunityStage).optional(),
-  source: z.string().optional(),
-  productInterest: z.string().optional(),
   ownerId: z.string().optional(),
   search: z.string().optional(), // matches contactName / companyName / contactPhone / contactEmail
   dateFrom: z.coerce.date().optional(),
@@ -89,30 +62,22 @@ export type ListLeadFollowUpsQuery = z.infer<typeof listLeadFollowUpsQuerySchema
 
 // ---------- Stepped lead creation (3-step wizard) ----------
 
-export const saveStep1Schema = z.object({
-  companyName: z.string().min(1, 'Company name is required'),
-  remarks: z.string().max(1000).optional(),
-  gpsLatitude: z.coerce.number().min(-90).max(90).optional(),
-  gpsLongitude: z.coerce.number().min(-180).max(180).optional(),
-  visitLocation: z.string().max(300).optional(),
-});
+export const saveStep1Schema = z
+  .object({
+    companyName: z.string().min(1, 'Company name is required'),
+    remarks: z.string().min(1, 'Remarks are required').max(400, 'Remarks must be 400 characters or fewer'),
+    gpsLatitude: z.coerce.number().min(-90).max(90),
+    gpsLongitude: z.coerce.number().min(-180).max(180),
+    visitLocation: z.string().min(1, 'Location is required').max(300),
+  });
 export type SaveStep1Input = z.infer<typeof saveStep1Schema>;
 
-export const saveStep2Schema = z
-  .object({
-    contactName: z.string().min(1, 'Customer name is required'),
-    contactPhone: z
-      .string()
-      .regex(MOBILE_REGEX, 'Enter a valid 10-digit mobile number')
-      .optional()
-      .or(z.literal('')),
-    contactEmail: z.string().email('Enter a valid email').optional().or(z.literal('')),
-    discussionNote: z.string().max(1000).optional(),
-  })
-  .refine((data) => !!data.contactPhone?.trim() || !!data.contactEmail?.trim(), {
-    message: 'At least one of phone or email is required',
-    path: ['contactPhone'],
-  });
+export const saveStep2Schema = z.object({
+  contactName: z.string().min(1, 'Customer name is required'),
+  contactPhone: z.string().regex(MOBILE_REGEX, 'Enter a valid 10-digit mobile number'),
+  contactEmail: z.string().email('Enter a valid email').optional().or(z.literal('')),
+  discussionNote: z.string().min(1, 'Discussion note is required').max(400, 'Discussion note must be 400 characters or fewer'),
+});
 export type SaveStep2Input = z.infer<typeof saveStep2Schema>;
 
 export const saveStep3Schema = z.discriminatedUnion('path', [

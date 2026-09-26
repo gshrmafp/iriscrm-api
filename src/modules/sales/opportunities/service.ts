@@ -8,8 +8,7 @@ import { quotationService } from '../quotations/service';
 import { registerCommentEntityAccessCheck } from '../../comments/service';
 import { opportunityRepository } from './repository';
 import { isValidTransition } from './pipeline';
-import { QualifyLeadInput } from '../leads/dto';
-import { ListOpportunitiesQuery, ReassignInput, TransitionStageInput, WinInput } from './dto';
+import { CreateOpportunityInput, ListOpportunitiesQuery, ReassignInput, TransitionStageInput, WinInput } from './dto';
 
 function canManageAllOpportunities(role: Role) {
   return role === Role.SUPER_ADMIN || role === Role.REGIONAL_ADMIN || role === Role.SALES_MANAGER;
@@ -26,10 +25,11 @@ async function loadOwnedOrThrow(id: string, actor: AuthUser) {
 }
 
 export const opportunityService = {
-  // Called from leads/service.qualify — lead is already loaded/ownership-checked there.
+  // Called from leads/service.saveStep3 (REQUIREMENT_IDENTIFIED path) — lead
+  // is already loaded/ownership-checked there.
   createFromLead(
     lead: Lead,
-    input: QualifyLeadInput,
+    input: CreateOpportunityInput,
     actor: AuthUser,
     quickQuotation?: { initialQuotationRef?: string; initialQuotationDate?: Date; initialQuotationAmount?: number },
   ) {
@@ -88,7 +88,7 @@ export const opportunityService = {
 
   async markLost(id: string, actor: AuthUser, reason: string) {
     const opportunity = await loadOwnedOrThrow(id, actor);
-    if (opportunity.stage === OpportunityStage.WON || opportunity.stage === OpportunityStage.LOST) {
+    if (opportunity.stage === OpportunityStage.PURCHASE_ORDER || opportunity.stage === OpportunityStage.LOST) {
       throw new BadRequestError('Opportunity is already closed');
     }
     const updated = await opportunityRepository.markLost(id, opportunity.stage, reason, actor.id);
@@ -100,8 +100,12 @@ export const opportunityService = {
   // real AMC/Project modules (Section 8 hand-off table).
   async win(id: string, actor: AuthUser, input: WinInput) {
     const opportunity = await loadOwnedOrThrow(id, actor);
-    if (opportunity.stage !== OpportunityStage.NEGOTIATION && opportunity.stage !== OpportunityStage.QUOTED && opportunity.stage !== OpportunityStage.MEETING) {
-      throw new BadRequestError('Opportunity must be in Quotation, Follow-ups, or Meeting stage to win');
+    if (
+      opportunity.stage !== OpportunityStage.QUOTATION &&
+      opportunity.stage !== OpportunityStage.FOLLOWUP &&
+      opportunity.stage !== OpportunityStage.MEETING
+    ) {
+      throw new BadRequestError('Opportunity must be in Quotation, Follow-up, or Meeting stage to win');
     }
 
     const latestQuote = await quotationService.getLatestAcceptedTotal(id);

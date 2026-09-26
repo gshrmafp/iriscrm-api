@@ -39,7 +39,7 @@ export const opportunityRouter = Router();
  *         schema: { type: string, enum: [asc, desc], default: desc }
  *       - in: query
  *         name: stage
- *         schema: { type: string, enum: [NEW, CONTACTED, QUALIFIED, QUOTED, NEGOTIATION, MEETING, WON, LOST] }
+ *         schema: { type: string, enum: [QUOTATION, FOLLOWUP, MEETING, PURCHASE_ORDER, LOST] }
  *       - in: query
  *         name: dealType
  *         schema: { type: string, enum: [INSTALLATION, AMC, PRODUCT] }
@@ -130,8 +130,8 @@ opportunityRouter.get(
  *             properties:
  *               toStage:
  *                 type: string
- *                 enum: [NEW, CONTACTED, QUALIFIED, QUOTED, NEGOTIATION, MEETING, WON, LOST]
- *                 example: "CONTACTED"
+ *                 enum: [QUOTATION, FOLLOWUP, MEETING, PURCHASE_ORDER, LOST]
+ *                 example: "FOLLOWUP"
  *               remark: { type: string }
  *     responses:
  *       200: { description: OK }
@@ -212,7 +212,7 @@ opportunityRouter.post(
  * @openapi
  * /opportunities/{id}/win:
  *   post:
- *     summary: Close Won — creates the AmcContract or Project hand-off record (SM-4.1, SM-5.4)
+ *     summary: Close as Purchase Order (Won) — captures the PO and creates the AmcContract or Project hand-off record (SM-4.1, SM-5.4)
  *     tags: [Opportunities]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
@@ -221,12 +221,20 @@ opportunityRouter.post(
  *         required: true
  *         schema: { type: string }
  *     requestBody:
- *       required: false
+ *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
+ *             required: [poNumber, poDate, poAmount]
  *             properties:
+ *               poNumber: { type: string, example: "PO-2026-0042" }
+ *               poDate: { type: string, format: date-time }
+ *               poAmount: { type: number, example: 150000 }
+ *               poRemarks: { type: string }
+ *               poGpsLatitude: { type: number, example: 28.4595 }
+ *               poGpsLongitude: { type: number, example: 77.0266 }
+ *               poLocation: { type: string, description: "Reverse-geocoded location label" }
  *               site: { type: string, example: "Acme HQ, Sector 21" }
  *               timeline: { type: string, example: "2 weeks" }
  *               customerId: { type: string }

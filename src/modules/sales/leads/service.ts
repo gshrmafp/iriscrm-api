@@ -1,25 +1,57 @@
-import { LeadStatus, PicklistType } from '@prisma/client';
+import { LeadStatus, OpportunityStage } from '@prisma/client';
 import { AuthUser } from '../../../core/middleware/types';
 import { BadRequestError, ForbiddenError, NotFoundError } from '../../../core/errors/AppError';
 import { CROSS_REGION_ROLES } from '../../../config/permissions';
 import { assertSameRegionOrElevated } from '../../../core/rbac/regionScope';
 import { generateId } from '../../../core/utils/idGenerator';
 import { identityRepository } from '../../identity/repository';
-import { picklistService } from '../../picklists/service';
 import { opportunityService } from '../opportunities/service';
+import { opportunityRepository } from '../opportunities/repository';
 import { registerCommentEntityAccessCheck } from '../../comments/service';
 import { leadRepository } from './repository';
 import {
   AddFollowUpInput,
-  CreateLeadInput,
+  AddMeetingInput,
   ListLeadFollowUpsQuery,
   ListLeadsQuery,
-  MarkLostInput,
-  QualifyLeadInput,
   SaveStep1Input,
   SaveStep2Input,
   SaveStep3Input,
 } from './dto';
+
+// Never-regress stage ranking for the auto-advance side effect: logging a
+// follow-up/meeting only ever moves an opportunity FORWARD (e.g. logging a
+// follow-up after a meeting already happened must not move it back).
+const STAGE_RANK: Record<OpportunityStage, number> = {
+  [OpportunityStage.QUOTATION]: 0,
+  [OpportunityStage.FOLLOWUP]: 1,
+  [OpportunityStage.MEETING]: 2,
+  [OpportunityStage.PURCHASE_ORDER]: 3,
+  [OpportunityStage.LOST]: -1, // terminal — never auto-advanced past
+};
+
+// Snapshot of which of the 7 named stages was active at the moment a
+// follow-up/meeting is logged — captured BEFORE this same action's own
+// auto-advance runs, so e.g. the meeting that pushes an opportunity from
+// FOLLOWUP to MEETING itself files under "FOLLOWUP" (that's the stage it was
+// logged during), not the stage it just caused. Powers the accordion-grouped
+// Lead Journey view on the frontend.
+function computeLoggedAtStage(lead: { status: LeadStatus; currentStep: number; opportunity?: { stage: OpportunityStage } | null }): string {
+  if (lead.opportunity) return lead.opportunity.stage;
+  if (lead.status === LeadStatus.LOST) return 'LOST';
+  return lead.currentStep >= 2 ? 'CONTACTED' : 'NEW_LEAD';
+}
+
+async function advanceOpportunityStage(
+  opportunity: { id: string; stage: OpportunityStage } | null | undefined,
+  target: OpportunityStage,
+  actorId: string,
+) {
+  if (!opportunity) return;
+  if (opportunity.stage === OpportunityStage.LOST || opportunity.stage === OpportunityStage.PURCHASE_ORDER) return;
+  if (STAGE_RANK[target] <= STAGE_RANK[opportunity.stage]) return;
+  await opportunityRepository.transitionStage(opportunity.id, opportunity.stage, target, actorId);
+}
 
 function canViewAllLeadsInRegion(role: string) {
   return role === 'SUPER_ADMIN' || role === 'REGIONAL_ADMIN' || role === 'SALES_MANAGER';
@@ -44,42 +76,6 @@ async function loadOwnedOrThrow(id: string, actor: AuthUser) {
 }
 
 export const leadService = {
-  // SM-1.1..1.6 — capture. Region auto-assigns from the creator unless an
-  // Admin explicitly overrides it (SM-1.4); owner defaults to the creator.
-  async create(actor: AuthUser, input: CreateLeadInput) {
-    await picklistService.assertActiveOption(PicklistType.LEAD_SOURCE, input.source);
-    if (input.productInterest) {
-      await picklistService.assertActiveOption(PicklistType.PRODUCT_INTEREST, input.productInterest);
-    }
-    if (input.source === 'OTHER' && !input.sourceOther?.trim()) {
-      throw new BadRequestError('Please specify the lead source');
-    }
-    if (input.productInterest === 'OTHER' && !input.productInterestOther?.trim()) {
-      throw new BadRequestError('Please specify the product of interest');
-    }
-
-    let regionId = actor.regionId;
-    if (input.regionId && input.regionId !== actor.regionId) {
-      if (!CROSS_REGION_ROLES.includes(actor.role) && actor.role !== 'REGIONAL_ADMIN') {
-        throw new ForbiddenError('Only an Admin can assign a lead to another region');
-      }
-      regionId = input.regionId;
-    }
-
-    const ownerId = input.ownerId ?? actor.id;
-
-    const duplicates = await leadRepository.findDuplicates(regionId, input.contactPhone, input.contactEmail);
-
-    const region = await identityRepository.findRegionById(regionId);
-    if (!region) throw new BadRequestError('Region not found');
-
-    const refNo = await leadRepository.nextRefNo(region.code, regionId);
-    const id = await generateId('LEAD');
-    const lead = await leadRepository.create({ ...input, id, refNo, regionId, ownerId, createdBy: actor.id });
-
-    return { lead, duplicateWarning: duplicates.length > 0 ? duplicates.map((d) => d.refNo) : undefined };
-  },
-
   async list(actor: AuthUser, filters: ListLeadsQuery) {
     return leadRepository.list(buildLeadScopeWhere(actor), filters);
   },
@@ -104,10 +100,15 @@ export const leadService = {
     return leadRepository.dashboardSummary(buildLeadScopeWhere(actor), ownerId);
   },
 
-  // SM-1.9 / SM-1.10 — follow-up log with next-action reminder.
+  // Loggable at any point in the lead's life — before and after qualification.
+  // Once an Opportunity exists, logging a follow-up advances its stage to
+  // FOLLOWUP (never-regress: only if it's currently at QUOTATION).
   async addFollowUp(id: string, actor: AuthUser, input: AddFollowUpInput) {
-    await loadOwnedOrThrow(id, actor);
-    return leadRepository.addFollowUp(id, { ...input, createdBy: actor.id });
+    const lead = await loadOwnedOrThrow(id, actor);
+    const loggedAtStage = computeLoggedAtStage(lead);
+    const followUp = await leadRepository.addFollowUp(id, { ...input, loggedAtStage, createdBy: actor.id });
+    await advanceOpportunityStage(lead.opportunity, OpportunityStage.FOLLOWUP, actor.id);
+    return followUp;
   },
 
   async completeFollowUp(followUpId: string, actor: AuthUser) {
@@ -121,22 +122,15 @@ export const leadService = {
     return leadRepository.completeFollowUp(followUpId);
   },
 
-  // SM-1.11 — mandatory reason to mark Lost.
-  async markLost(id: string, actor: AuthUser, input: MarkLostInput) {
+  // Physical meeting log — note + silently-captured GPS. Loggable at any
+  // point in the lead's life, same as addFollowUp. Advances the opportunity's
+  // stage to MEETING (never-regress: only if currently at QUOTATION or FOLLOWUP).
+  async addMeeting(id: string, actor: AuthUser, input: AddMeetingInput) {
     const lead = await loadOwnedOrThrow(id, actor);
-    if (lead.status === LeadStatus.LOST) throw new BadRequestError('Lead is already Lost');
-    return leadRepository.markStatus(id, LeadStatus.LOST, input.reason);
-  },
-
-  // SM-1.7 — qualify a lead into an Opportunity.
-  async qualify(id: string, actor: AuthUser, input: QualifyLeadInput) {
-    const lead = await loadOwnedOrThrow(id, actor);
-    if (lead.status !== LeadStatus.NEW) throw new BadRequestError('Only a new lead can be qualified');
-    if (lead.opportunity) throw new BadRequestError('Lead already has an opportunity');
-
-    const opportunity = await opportunityService.createFromLead(lead, input, actor);
-    await leadRepository.markStatus(id, LeadStatus.QUALIFIED);
-    return opportunity;
+    const loggedAtStage = computeLoggedAtStage(lead);
+    const meeting = await leadRepository.addMeeting(id, { ...input, loggedAtStage, createdBy: actor.id });
+    await advanceOpportunityStage(lead.opportunity, OpportunityStage.MEETING, actor.id);
+    return meeting;
   },
 
   // ---------- Stepped lead creation (3-step wizard) ----------
@@ -205,6 +199,7 @@ export const leadService = {
         note: input.remarks || 'Scheduled follow-up',
         channel: 'meeting',
         nextActionAt: input.followUpDate,
+        loggedAtStage: 'CONTACTED',
         createdBy: actor.id,
       });
       return { lead: updated, followUp };

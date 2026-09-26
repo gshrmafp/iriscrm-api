@@ -1,6 +1,6 @@
 import { LeadStatus, Prisma } from '@prisma/client';
 import { prisma } from '../../../core/db/prisma';
-import { AddFollowUpInput, CreateLeadInput, ListLeadFollowUpsQuery, ListLeadsQuery, SaveStep1Input } from './dto';
+import { AddFollowUpInput, AddMeetingInput, ListLeadFollowUpsQuery, ListLeadsQuery, SaveStep1Input } from './dto';
 
 export const leadRepository = {
   async list(
@@ -14,8 +14,6 @@ export const leadRepository = {
       sortOrder,
       status,
       opportunityStage,
-      source,
-      productInterest,
       ownerId,
       search,
       dateFrom,
@@ -25,8 +23,6 @@ export const leadRepository = {
     const where: Prisma.LeadWhereInput = { ...scopeWhere, deletedAt: null };
     if (status) where.status = status;
     if (opportunityStage) where.opportunity = { is: { stage: opportunityStage } };
-    if (source) where.source = source;
-    if (productInterest) where.productInterest = { contains: productInterest, mode: 'insensitive' };
     // scopeWhere.ownerId means the caller is restricted to their own leads —
     // the ownerId filter must not be able to widen that back out.
     if (ownerId && !scopeWhere.ownerId) where.ownerId = ownerId;
@@ -50,6 +46,7 @@ export const leadRepository = {
         where,
         include: {
           followUps: { orderBy: { createdAt: 'desc' }, take: 5 },
+          meetings: { orderBy: { createdAt: 'desc' }, take: 5 },
           opportunity: { select: { id: true, value: true, stage: true } },
         },
         // Tiebreaker keeps pagination deterministic across identical requests
@@ -78,6 +75,7 @@ export const leadRepository = {
       where: { id, deletedAt: null },
       include: {
         followUps: { orderBy: { createdAt: 'desc' } },
+        meetings: { orderBy: { createdAt: 'desc' } },
         opportunity: { include: { stageHistory: { orderBy: { createdAt: 'asc' } } } },
       },
     });
@@ -96,37 +94,7 @@ export const leadRepository = {
     });
   },
 
-  async nextRefNo(regionCode: string, regionId: string) {
-    const count = await prisma.lead.count({ where: { regionId } });
-    return `${regionCode}-L-${String(count + 1).padStart(6, '0')}`;
-  },
-
-  create(data: CreateLeadInput & { id: string; refNo: string; regionId: string; ownerId: string; createdBy: string }) {
-    return prisma.lead.create({
-      data: {
-        id: data.id,
-        refNo: data.refNo,
-        contactName: data.contactName,
-        companyName: data.companyName,
-        contactPhone: data.contactPhone,
-        contactEmail: data.contactEmail,
-        address: data.address,
-        gpsLatitude: data.gpsLatitude,
-        gpsLongitude: data.gpsLongitude,
-        visitLocation: data.visitLocation,
-        source: data.source,
-        sourceOther: data.sourceOther,
-        productInterest: data.productInterest,
-        productInterestOther: data.productInterestOther,
-        notes: data.notes,
-        regionId: data.regionId,
-        ownerId: data.ownerId,
-        createdBy: data.createdBy,
-      },
-    });
-  },
-
-  addFollowUp(leadId: string, input: AddFollowUpInput & { createdBy: string }) {
+  addFollowUp(leadId: string, input: AddFollowUpInput & { loggedAtStage?: string; createdBy: string }) {
     return prisma.leadFollowUp.create({
       data: {
         leadId,
@@ -134,6 +102,21 @@ export const leadRepository = {
         channel: input.channel,
         nextActionAt: input.nextActionAt,
         priority: input.priority ?? 'MEDIUM',
+        loggedAtStage: input.loggedAtStage,
+        createdBy: input.createdBy,
+      },
+    });
+  },
+
+  addMeeting(leadId: string, input: AddMeetingInput & { loggedAtStage?: string; createdBy: string }) {
+    return prisma.leadMeeting.create({
+      data: {
+        leadId,
+        note: input.note,
+        gpsLatitude: input.gpsLatitude,
+        gpsLongitude: input.gpsLongitude,
+        visitLocation: input.visitLocation,
+        loggedAtStage: input.loggedAtStage,
         createdBy: input.createdBy,
       },
     });

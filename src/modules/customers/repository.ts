@@ -11,14 +11,9 @@ export const customerRepository = {
     if (search) where.name = { contains: search, mode: 'insensitive' };
 
     const skip = (page - 1) * pageSize;
-    // Cheap single-query "last activity" signal (most recent linked Lead's
-    // updatedAt) rather than an N+1 per row — the mobile client derives a
-    // real, honest recency badge from this instead of a stored/subjective
-    // "health" field.
     const [items, total] = await Promise.all([
       prisma.customer.findMany({
         where,
-        include: { leads: { orderBy: { updatedAt: 'desc' }, take: 1, select: { updatedAt: true } } },
         orderBy: [{ [sortBy]: sortOrder }, { id: 'asc' }],
         skip,
         take: pageSize,

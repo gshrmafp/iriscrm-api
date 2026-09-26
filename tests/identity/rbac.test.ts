@@ -69,10 +69,18 @@ describe('Auth + RBAC', () => {
       .send({ email: execUser!.email, password: 'TestPass123!' });
     const execToken = execLogin.body.data.accessToken;
 
+    const steppedBody = (companyName: string) => ({
+      companyName,
+      remarks: 'Site visit remarks',
+      gpsLatitude: 28.4595,
+      gpsLongitude: 77.0266,
+      visitLocation: 'Sector 21, Gurugram',
+    });
+
     const before = await request(app)
-      .post('/api/v1/leads')
+      .post('/api/v1/leads/stepped')
       .set('Authorization', `Bearer ${execToken}`)
-      .send({ contactName: 'Before Deny', source: 'MANUAL' });
+      .send(steppedBody('Before Deny'));
     expect(before.status).toBe(201);
 
     await request(app)
@@ -81,9 +89,9 @@ describe('Auth + RBAC', () => {
       .send({ permissionKey: PERMISSIONS.SALES_LEAD_CREATE, effect: PermissionEffect.DENY });
 
     const after = await request(app)
-      .post('/api/v1/leads')
+      .post('/api/v1/leads/stepped')
       .set('Authorization', `Bearer ${execToken}`)
-      .send({ contactName: 'After Deny', source: 'MANUAL' });
+      .send(steppedBody('After Deny'));
     expect(after.status).toBe(403);
 
     await prisma.lead.deleteMany({ where: { regionId } });

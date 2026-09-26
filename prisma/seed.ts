@@ -344,7 +344,8 @@ async function seedBulkData(namedRegions: { ggn: { id: string; code: string }; d
 
   // --- Leads (10,000) + Lead Follow-ups (~30,000) ---------------------------
   const TOTAL_LEADS = 10000;
-  const leadSourceCodes = ['MANUAL', 'WEB_FORM', 'PHONE_IN', 'REFERRAL', 'EXISTING_CUSTOMER'];
+  // Still used below by the Sales Query seeding block (a different model with
+  // its own similarly-named productInterest field that was NOT removed).
   const productInterestCodes = ['CCTV_INSTALLATION', 'ACCESS_CONTROL', 'AMC_RENEWAL', 'OFFICE_FURNITURE', 'IT_HARDWARE', 'OTHER'];
   const leadRefCounters = new Map<string, number>();
   const leadRows: Prisma.LeadCreateManyInput[] = [];
@@ -362,21 +363,16 @@ async function seedBulkData(namedRegions: { ggn: { id: string; code: string }; d
     const counter = (leadRefCounters.get(region.code) ?? 900000) + 1;
     leadRefCounters.set(region.code, counter);
     const id = randomUUID();
-    const regionCustomers = customersByRegion.get(region.id) ?? [];
 
     leadRows.push({
       id,
       refNo: `${region.code}-L-${counter}`,
-      customerId: regionCustomers.length && Math.random() < 0.6 ? randomItem(regionCustomers) : null,
       contactName: faker.person.fullName(),
       companyName: Math.random() < 0.7 ? faker.company.name() : null,
       contactPhone: indianMobile(),
       contactEmail: Math.random() < 0.8 ? faker.internet.email().toLowerCase() : null,
       gpsLatitude: Math.random() < 0.3 ? faker.location.latitude({ min: 8, max: 34 }) : null,
       gpsLongitude: Math.random() < 0.3 ? faker.location.longitude({ min: 68, max: 89 }) : null,
-      source: randomItem(leadSourceCodes),
-      productInterest: Math.random() < 0.7 ? randomItem(productInterestCodes) : null,
-      notes: Math.random() < 0.5 ? faker.lorem.sentence() : null,
       status,
       lostReason: status === LeadStatus.LOST ? randomItem(['price', 'competitor', 'no_budget', 'no_response', 'other']) : null,
       regionId: region.id,
@@ -413,11 +409,13 @@ async function seedBulkData(namedRegions: { ggn: { id: string; code: string }; d
   faker.helpers.shuffle(qualifiedLeads);
   const opportunityLeads = qualifiedLeads.slice(0, TOTAL_OPPORTUNITIES);
 
+  // Realistic forward path (pre-close) — PURCHASE_ORDER is the closing stage,
+  // reached via the dedicated win() flow rather than a "next" step here.
   const oppStagePath: OpportunityStage[] = [
-    OpportunityStage.NEW,
-    OpportunityStage.CONTACTED,
-    OpportunityStage.QUOTED,
-    OpportunityStage.NEGOTIATION,
+    OpportunityStage.QUOTATION,
+    OpportunityStage.FOLLOWUP,
+    OpportunityStage.MEETING,
+    OpportunityStage.PURCHASE_ORDER,
   ];
   const opportunityRows: Prisma.OpportunityCreateManyInput[] = [];
   const opportunityRecords: {
@@ -435,18 +433,20 @@ async function seedBulkData(namedRegions: { ggn: { id: string; code: string }; d
   for (const lead of opportunityLeads) {
     const id = randomUUID();
     const finalStage = weightedPick<OpportunityStage>([
-      [OpportunityStage.NEW, 10],
-      [OpportunityStage.CONTACTED, 15],
-      [OpportunityStage.QUOTED, 20],
-      [OpportunityStage.NEGOTIATION, 15],
-      [OpportunityStage.WON, 25],
-      [OpportunityStage.LOST, 15],
+      [OpportunityStage.QUOTATION, 30],
+      [OpportunityStage.FOLLOWUP, 20],
+      [OpportunityStage.MEETING, 15],
+      [OpportunityStage.PURCHASE_ORDER, 25],
+      [OpportunityStage.LOST, 10],
     ]);
     const value = randomInt(10000, 1500000);
     const createdAt = laterDate(lead.createdAt, 10);
-    const wonOrLost = finalStage === OpportunityStage.WON || finalStage === OpportunityStage.LOST;
-    const traversedPath = wonOrLost
-      ? oppStagePath
+    const isLost = finalStage === OpportunityStage.LOST;
+    // Walk forward through the realistic QUOTATION -> FOLLOWUP -> MEETING ->
+    // PURCHASE_ORDER subset up to (and including) finalStage. LOST can strike
+    // at any point, so walk a random prefix of that path first, then LOST.
+    const traversedPath = isLost
+      ? oppStagePath.slice(0, randomInt(1, oppStagePath.length))
       : oppStagePath.slice(0, oppStagePath.indexOf(finalStage) + 1);
 
     opportunityRows.push({
@@ -456,9 +456,9 @@ async function seedBulkData(namedRegions: { ggn: { id: string; code: string }; d
       value,
       stage: finalStage,
       probability: STAGE_PROBABILITY[finalStage],
-      expectedClose: finalStage === OpportunityStage.WON || finalStage === OpportunityStage.LOST ? null : laterDate(createdAt, 60),
-      lostReason: finalStage === OpportunityStage.LOST ? randomItem(['price', 'competitor', 'no_budget', 'timeline']) : null,
-      wonAt: finalStage === OpportunityStage.WON ? laterDate(createdAt, 45) : null,
+      expectedClose: finalStage === OpportunityStage.PURCHASE_ORDER || isLost ? null : laterDate(createdAt, 60),
+      lostReason: isLost ? randomItem(['price', 'competitor', 'no_budget', 'timeline']) : null,
+      wonAt: finalStage === OpportunityStage.PURCHASE_ORDER ? laterDate(createdAt, 45) : null,
       regionId: lead.regionId,
       ownerId: lead.ownerId,
       createdBy: lead.ownerId,
@@ -475,8 +475,8 @@ async function seedBulkData(namedRegions: { ggn: { id: string; code: string }; d
       prev = stage;
       historyDate = laterDate(historyDate, 10);
     }
-    if (wonOrLost) {
-      stageHistoryRows.push({ opportunityId: id, fromStage: prev, toStage: finalStage, actorId: lead.ownerId, createdAt: historyDate });
+    if (isLost) {
+      stageHistoryRows.push({ opportunityId: id, fromStage: prev, toStage: OpportunityStage.LOST, actorId: lead.ownerId, createdAt: historyDate });
     }
   }
   await batchCreateMany('Opportunities', opportunityRows, (chunk) =>
@@ -491,10 +491,14 @@ async function seedBulkData(namedRegions: { ggn: { id: string; code: string }; d
   });
 
   // --- Quotations (~4,000) + Quotation lines (~20,000+) ---------------------
+  // An Opportunity now starts life at QUOTATION (a quote already exists by
+  // the time it's created, via Step 3's REQUIREMENT_IDENTIFIED path), so
+  // every stage is "quotable" — unlike the old NEW/CONTACTED pre-quote stages.
   const quotableStages: OpportunityStage[] = [
-    OpportunityStage.QUOTED,
-    OpportunityStage.NEGOTIATION,
-    OpportunityStage.WON,
+    OpportunityStage.QUOTATION,
+    OpportunityStage.FOLLOWUP,
+    OpportunityStage.MEETING,
+    OpportunityStage.PURCHASE_ORDER,
     OpportunityStage.LOST,
   ];
   const quotable = opportunityRecords.filter((o) => quotableStages.includes(o.stage));
@@ -534,7 +538,7 @@ async function seedBulkData(namedRegions: { ggn: { id: string; code: string }; d
     const discountTotal = lines.reduce((sum, l) => sum + Number(l.discount ?? 0), 0);
     const grandTotal = subtotal - discountTotal + taxTotal;
     const status =
-      opp.stage === OpportunityStage.WON
+      opp.stage === OpportunityStage.PURCHASE_ORDER
         ? QuotationStatus.ACCEPTED
         : opp.stage === OpportunityStage.LOST
           ? randomItem([QuotationStatus.REJECTED, QuotationStatus.EXPIRED])
@@ -826,9 +830,6 @@ async function main() {
         contactName: 'Acme Facilities Pvt Ltd',
         contactPhone: '9810000001',
         contactEmail: 'procurement@acmefacilities.example',
-        source: 'WEB_FORM',
-        productInterest: 'CCTV Installation',
-        notes: 'Wants CCTV coverage for a 4-floor office building.',
         regionId: ggn.id,
         ownerId: ggnExec.id,
         createdBy: ggnExec.id,
@@ -851,20 +852,18 @@ async function main() {
           leadId: lead1.id,
           dealType: DealType.INSTALLATION,
           value: 85000,
-          stage: OpportunityStage.QUOTED,
-          probability: STAGE_PROBABILITY.QUOTED,
+          stage: OpportunityStage.QUOTATION,
+          probability: STAGE_PROBABILITY.QUOTATION,
           expectedClose: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
           regionId: ggn.id,
           ownerId: ggnExec.id,
           createdBy: ggnExec.id,
         },
       });
+      // An Opportunity is created directly at QUOTATION (SM-2.1) — a single
+      // history row records that entry, same as the real Step 3 flow does.
       await tx.opportunityStageHistory.createMany({
-        data: [
-          { opportunityId: opp.id, toStage: OpportunityStage.NEW, actorId: ggnExec.id },
-          { opportunityId: opp.id, fromStage: OpportunityStage.NEW, toStage: OpportunityStage.CONTACTED, actorId: ggnExec.id },
-          { opportunityId: opp.id, fromStage: OpportunityStage.CONTACTED, toStage: OpportunityStage.QUOTED, actorId: ggnExec.id },
-        ],
+        data: [{ opportunityId: opp.id, toStage: OpportunityStage.QUOTATION, actorId: ggnExec.id }],
       });
       return opp;
     });
@@ -903,8 +902,6 @@ async function main() {
         refNo: 'DL-L-000001',
         contactName: 'Metro Retail Chain',
         contactPhone: '9810000002',
-        source: 'REFERRAL',
-        productInterest: 'AMC Renewal',
         regionId: dl.id,
         ownerId: dlExec.id,
         createdBy: dlExec.id,

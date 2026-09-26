@@ -18,7 +18,7 @@ import { CreateQuotationInput, ReviseQuotationInput, QuotationLineInput } from "
 async function loadOpenOpportunityOrThrow(opportunityId: string) {
   const opportunity = await opportunityRepository.findById(opportunityId);
   if (!opportunity) throw new NotFoundError("Opportunity not found");
-  if (opportunity.stage === "WON" || opportunity.stage === "LOST") {
+  if (opportunity.stage === "PURCHASE_ORDER" || opportunity.stage === "LOST") {
     throw new BadRequestError("Cannot quote a closed opportunity");
   }
   return opportunity;

@@ -13,10 +13,23 @@ async function login(email: string, password: string) {
 
 describe('Sales module — happy path + region isolation', () => {
   let regionAId: string;
+  let regionACode: string;
   let regionBId: string;
   let execAToken: string;
   let execBToken: string;
   let catalogItemId: string;
+
+  // Stepped lead creation — Step 1 (site visit) with the fields now required
+  // by saveStep1Schema.
+  function step1Body(companyName: string) {
+    return {
+      companyName,
+      remarks: 'Site visit remarks',
+      gpsLatitude: 28.4595,
+      gpsLongitude: 77.0266,
+      visitLocation: 'Sector 21, Gurugram',
+    };
+  }
 
   beforeAll(async () => {
     await ensureRolePermissionsSeeded();
@@ -24,6 +37,7 @@ describe('Sales module — happy path + region isolation', () => {
     const regionA = await createTestRegion('SA');
     const regionB = await createTestRegion('SB');
     regionAId = regionA.id;
+    regionACode = regionA.code;
     regionBId = regionB.id;
 
     const { user: execA, password: pwA } = await createTestUser(Role.SALES_EXECUTIVE, regionAId, 'sales-exec-a');
@@ -57,30 +71,33 @@ describe('Sales module — happy path + region isolation', () => {
 
   it('runs lead -> opportunity -> quotation -> win end to end', async () => {
     const leadRes = await request(app)
-      .post('/api/v1/leads')
+      .post('/api/v1/leads/stepped')
       .set('Authorization', `Bearer ${execAToken}`)
-      .send({ contactName: 'Test Customer', source: 'MANUAL' });
+      .send(step1Body('Test Customer'));
     expect(leadRes.status).toBe(201);
     const leadId = leadRes.body.data.lead.id;
-    expect(leadRes.body.data.lead.refNo).toMatch(/-L-\d{6}$/);
-
-    const qualifyRes = await request(app)
-      .post(`/api/v1/leads/${leadId}/qualify`)
-      .set('Authorization', `Bearer ${execAToken}`)
-      .send({ dealType: 'INSTALLATION', value: 20000 });
-    expect(qualifyRes.status).toBe(201);
-    const opportunityId = qualifyRes.body.data.id;
-    expect(qualifyRes.body.data.stage).toBe('NEW');
+    expect(leadRes.body.data.lead.refNo).toMatch(new RegExp(`^${regionACode}\\d+$`));
 
     await request(app)
-      .patch(`/api/v1/opportunities/${opportunityId}/stage`)
+      .patch(`/api/v1/leads/${leadId}/step-2`)
       .set('Authorization', `Bearer ${execAToken}`)
-      .send({ toStage: 'CONTACTED' });
-    const toQuoted = await request(app)
-      .patch(`/api/v1/opportunities/${opportunityId}/stage`)
+      .send({ contactName: 'Test Customer', contactPhone: '9876543210', discussionNote: 'Discussed requirements' });
+
+    // Step 3 — REQUIREMENT_IDENTIFIED creates the Opportunity directly at
+    // stage QUOTATION (the only way to create an Opportunity now).
+    const step3Res = await request(app)
+      .patch(`/api/v1/leads/${leadId}/step-3`)
       .set('Authorization', `Bearer ${execAToken}`)
-      .send({ toStage: 'QUOTED' });
-    expect(toQuoted.status).toBe(200);
+      .send({
+        path: 'REQUIREMENT_IDENTIFIED',
+        dealType: 'INSTALLATION',
+        quotationRef: 'Q-1001',
+        quotationDate: new Date().toISOString(),
+        quotationAmount: 20000,
+      });
+    expect(step3Res.status).toBe(201);
+    const opportunityId = step3Res.body.data.opportunity.id;
+    expect(step3Res.body.data.opportunity.stage).toBe('QUOTATION');
 
     const quoteRes = await request(app)
       .post('/api/v1/quotations')
@@ -97,13 +114,14 @@ describe('Sales module — happy path + region isolation', () => {
       .set('Authorization', `Bearer ${execAToken}`);
     expect(submitRes.body.data.status).toBe('APPROVED'); // within exec's own limit -> self-approves
 
-    // win() accepts an opportunity in either QUOTED or NEGOTIATION stage
+    // win() accepts an opportunity in QUOTATION, FOLLOWUP, or MEETING stage
+    // and now requires PO details.
     const winRes = await request(app)
       .post(`/api/v1/opportunities/${opportunityId}/win`)
       .set('Authorization', `Bearer ${execAToken}`)
-      .send({ site: 'Test Site' });
+      .send({ poNumber: 'PO-1001', poDate: new Date().toISOString(), poAmount: 2360, site: 'Test Site' });
     expect(winRes.status).toBe(200);
-    expect(winRes.body.data.stage).toBe('WON');
+    expect(winRes.body.data.stage).toBe('PURCHASE_ORDER');
 
     const project = await prisma.project.findUnique({ where: { opportunityId } });
     expect(project).not.toBeNull();
@@ -112,16 +130,27 @@ describe('Sales module — happy path + region isolation', () => {
 
   it('rejects a discount above the executive approval limit down to PENDING_APPROVAL', async () => {
     const leadRes = await request(app)
-      .post('/api/v1/leads')
+      .post('/api/v1/leads/stepped')
       .set('Authorization', `Bearer ${execAToken}`)
-      .send({ contactName: 'Big Discount Customer', source: 'MANUAL' });
+      .send(step1Body('Big Discount Customer'));
     const leadId = leadRes.body.data.lead.id;
 
-    const qualifyRes = await request(app)
-      .post(`/api/v1/leads/${leadId}/qualify`)
+    await request(app)
+      .patch(`/api/v1/leads/${leadId}/step-2`)
       .set('Authorization', `Bearer ${execAToken}`)
-      .send({ dealType: 'PRODUCT', value: 10000 });
-    const opportunityId = qualifyRes.body.data.id;
+      .send({ contactName: 'Big Discount Customer', contactPhone: '9876543211', discussionNote: 'Discussed requirements' });
+
+    const step3Res = await request(app)
+      .patch(`/api/v1/leads/${leadId}/step-3`)
+      .set('Authorization', `Bearer ${execAToken}`)
+      .send({
+        path: 'REQUIREMENT_IDENTIFIED',
+        dealType: 'AMC',
+        quotationRef: 'Q-1002',
+        quotationDate: new Date().toISOString(),
+        quotationAmount: 10000,
+      });
+    const opportunityId = step3Res.body.data.opportunity.id;
 
     const quoteRes = await request(app)
       .post('/api/v1/quotations')
@@ -140,9 +169,9 @@ describe('Sales module — happy path + region isolation', () => {
 
   it('isolates leads by region — an exec in region B cannot see region A leads', async () => {
     const leadRes = await request(app)
-      .post('/api/v1/leads')
+      .post('/api/v1/leads/stepped')
       .set('Authorization', `Bearer ${execAToken}`)
-      .send({ contactName: 'Region A Only', source: 'MANUAL' });
+      .send(step1Body('Region A Only'));
     const leadId = leadRes.body.data.lead.id;
 
     const crossRegionGet = await request(app)

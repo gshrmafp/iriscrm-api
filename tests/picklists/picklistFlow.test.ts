@@ -77,30 +77,4 @@ describe('Picklists (admin-managed Lead Source / Product Interest options)', () 
       .set('Authorization', `Bearer ${adminToken}`);
     expect(allList.body.data.some((o: { code: string }) => o.code === testCode)).toBe(true);
   });
-
-  it('rejects creating a lead with a source code that is not a valid active option', async () => {
-    const res = await request(app)
-      .post('/api/v1/leads')
-      .set('Authorization', `Bearer ${execToken}`)
-      .send({ contactName: 'Bad Source Customer', source: 'NOT_A_REAL_SOURCE' });
-    expect(res.status).toBe(400);
-  });
-
-  it('rejects creating a lead with an invalid productInterest code', async () => {
-    const res = await request(app)
-      .post('/api/v1/leads')
-      .set('Authorization', `Bearer ${execToken}`)
-      .send({ contactName: 'Bad Product Customer', source: 'MANUAL', productInterest: 'NOT_A_REAL_PRODUCT' });
-    expect(res.status).toBe(400);
-  });
-
-  it('creates a lead successfully with valid source and productInterest codes', async () => {
-    const res = await request(app)
-      .post('/api/v1/leads')
-      .set('Authorization', `Bearer ${execToken}`)
-      .send({ contactName: 'Good Customer', source: 'WEB_FORM', productInterest: 'CCTV_INSTALLATION' });
-    expect(res.status).toBe(201);
-    expect(res.body.data.lead.source).toBe('WEB_FORM');
-    expect(res.body.data.lead.productInterest).toBe('CCTV_INSTALLATION');
-  });
 });
