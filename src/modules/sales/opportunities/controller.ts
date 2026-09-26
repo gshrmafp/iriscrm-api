@@ -14,8 +14,8 @@ export const opportunityController = {
 
   async getPipelineSummary(req: Request, res: Response) {
     if (!req.user) throw new UnauthorizedError();
-    const { ownerId } = req.query as unknown as PipelineSummaryQuery;
-    ok(res, await opportunityService.getPipelineSummary(req.user, ownerId));
+    const filters = req.query as unknown as PipelineSummaryQuery;
+    ok(res, await opportunityService.getPipelineSummary(req.user, filters));
   },
 
   async get(req: Request, res: Response) {

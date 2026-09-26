@@ -39,10 +39,19 @@ export const opportunityRepository = {
   // Per-stage counts/sums across ALL stages, plus pipeline value / weighted
   // forecast across the open (non-Won/Lost) subset — computed in the DB via
   // groupBy so the dashboard doesn't need to fetch every row to total them.
-  async getPipelineSummary(scopeWhere: { regionId?: string; ownerId?: string }, ownerId?: string) {
+  async getPipelineSummary(
+    scopeWhere: { regionId?: string; ownerId?: string },
+    filters: { ownerId?: string; dateFrom?: Date; dateTo?: Date } = {},
+  ) {
+    const { ownerId, dateFrom, dateTo } = filters;
     const where: Prisma.OpportunityWhereInput = { ...scopeWhere, deletedAt: null };
     // Same override guard as list(): an owner-scoped caller can't widen past their own opportunities.
     if (ownerId && !scopeWhere.ownerId) where.ownerId = ownerId;
+    if (dateFrom || dateTo) {
+      where.createdAt = {};
+      if (dateFrom) (where.createdAt as Prisma.DateTimeFilter).gte = dateFrom;
+      if (dateTo) (where.createdAt as Prisma.DateTimeFilter).lte = dateTo;
+    }
 
     const grouped = await prisma.opportunity.groupBy({
       by: ['stage'],
@@ -186,6 +195,14 @@ export const opportunityRepository = {
     quotationTotal: number;
   }) {
     return prisma.$transaction(async (tx) => {
+      // Guard against a typed/garbage customerId — an unvalidated FK here
+      // would otherwise roll back the entire win transaction (P2003).
+      let customerId: string | undefined;
+      if (params.input.customerId) {
+        const customer = await tx.customer.findUnique({ where: { id: params.input.customerId } });
+        customerId = customer?.id;
+      }
+
       const opportunity = await tx.opportunity.update({
         where: { id: params.opportunityId },
         data: {
@@ -215,7 +232,7 @@ export const opportunityRepository = {
         await tx.amcContract.create({
           data: {
             opportunityId: params.opportunityId,
-            customerId: params.input.customerId,
+            customerId,
             type: (params.input.amcType ?? AmcType.NON_COMPREHENSIVE) as AmcType,
             frequency: (params.input.amcFrequency ?? AmcFrequency.ANNUAL) as AmcFrequency,
             startDate: params.input.amcStartDate ?? new Date(),
@@ -230,7 +247,7 @@ export const opportunityRepository = {
         await tx.project.create({
           data: {
             opportunityId: params.opportunityId,
-            customerId: params.input.customerId,
+            customerId,
             site: params.input.site,
             bom: params.input.bom,
             timeline: params.input.timeline,

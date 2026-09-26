@@ -674,8 +674,14 @@ export const queryRepository = {
     role: string,
     regionId: string,
     whereBase: Prisma.SalesQueryWhereInput,
+    dateRange: { fromDate?: Date; toDate?: Date } = {},
   ) {
     const base: Prisma.SalesQueryWhereInput = { deletedAt: null, ...whereBase };
+    if (dateRange.fromDate || dateRange.toDate) {
+      base.createdAt = {};
+      if (dateRange.fromDate) (base.createdAt as Prisma.DateTimeFilter).gte = dateRange.fromDate;
+      if (dateRange.toDate) (base.createdAt as Prisma.DateTimeFilter).lte = dateRange.toDate;
+    }
 
     const [
       total,
@@ -717,7 +723,7 @@ export const queryRepository = {
         where: {
           status: FollowUpStatus.PENDING,
           deletedAt: null,
-          query: { deletedAt: null, ...(whereBase as any) },
+          query: { ...(base as any) },
         },
       }),
       prisma.queryFollowUp.count({
@@ -725,7 +731,7 @@ export const queryRepository = {
           status: FollowUpStatus.PENDING,
           scheduledAt: { lt: new Date() },
           deletedAt: null,
-          query: { deletedAt: null, ...(whereBase as any) },
+          query: { ...(base as any) },
         },
       }),
     ]);

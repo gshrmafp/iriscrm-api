@@ -1,6 +1,39 @@
-import { LeadStatus, Prisma } from '@prisma/client';
+import { LeadStatus, OpportunityStage, Prisma } from '@prisma/client';
 import { prisma } from '../../../core/db/prisma';
-import { AddFollowUpInput, AddMeetingInput, ListLeadFollowUpsQuery, ListLeadsQuery, SaveStep1Input } from './dto';
+import {
+  AddFollowUpInput,
+  AddMeetingInput,
+  JourneySummaryQuery,
+  LeadStageFilter,
+  ListLeadFollowUpsQuery,
+  ListLeadsQuery,
+  SaveStep1Input,
+  TeamPerformanceQuery,
+  leadStageFilterValues,
+} from './dto';
+
+// Composite "Lead Journey" stage filter — see dto.ts's leadStageFilterValues.
+// Shared by list() (the Leads-list dropdown) and journeySummary() (the
+// Dashboard's per-stage counts + recent leads), so both agree on exactly
+// what each of the 7 stages means.
+function buildStageWhere(stage: LeadStageFilter): Prisma.LeadWhereInput {
+  switch (stage) {
+    case 'NEW_LEAD':
+      return { status: 'NEW', currentStep: 1 };
+    case 'CONTACTED':
+      return { status: 'NEW', currentStep: { gte: 2 } };
+    case 'QUALIFIED':
+      return { status: 'QUALIFIED' };
+    case 'QUOTATION':
+      return { opportunity: { is: { stage: { in: ['QUOTATION', 'FOLLOWUP'] } } } };
+    case 'MEETING':
+      return { opportunity: { is: { stage: 'MEETING' } } };
+    case 'PURCHASE_ORDER':
+      return { opportunity: { is: { stage: 'PURCHASE_ORDER' } } };
+    case 'LOST':
+      return { OR: [{ status: 'LOST' }, { opportunity: { is: { stage: 'LOST' } } }] };
+  }
+}
 
 export const leadRepository = {
   async list(
@@ -14,6 +47,7 @@ export const leadRepository = {
       sortOrder,
       status,
       opportunityStage,
+      stage,
       ownerId,
       search,
       dateFrom,
@@ -21,8 +55,15 @@ export const leadRepository = {
     } = filters;
 
     const where: Prisma.LeadWhereInput = { ...scopeWhere, deletedAt: null };
+    const andConditions: Prisma.LeadWhereInput[] = [];
+
     if (status) where.status = status;
     if (opportunityStage) where.opportunity = { is: { stage: opportunityStage } };
+    if (stage) {
+      const stageWhere = buildStageWhere(stage);
+      if (stage === 'LOST') andConditions.push(stageWhere);
+      else Object.assign(where, stageWhere);
+    }
     // scopeWhere.ownerId means the caller is restricted to their own leads —
     // the ownerId filter must not be able to widen that back out.
     if (ownerId && !scopeWhere.ownerId) where.ownerId = ownerId;
@@ -32,13 +73,16 @@ export const leadRepository = {
       if (dateTo) (where.createdAt as Prisma.DateTimeFilter).lte = dateTo;
     }
     if (search) {
-      where.OR = [
-        { contactName: { contains: search, mode: 'insensitive' } },
-        { companyName: { contains: search, mode: 'insensitive' } },
-        { contactPhone: { contains: search, mode: 'insensitive' } },
-        { contactEmail: { contains: search, mode: 'insensitive' } },
-      ];
+      andConditions.push({
+        OR: [
+          { contactName: { contains: search, mode: 'insensitive' } },
+          { companyName: { contains: search, mode: 'insensitive' } },
+          { contactPhone: { contains: search, mode: 'insensitive' } },
+          { contactEmail: { contains: search, mode: 'insensitive' } },
+        ],
+      });
     }
+    if (andConditions.length) where.AND = andConditions;
 
     const skip = (page - 1) * pageSize;
     const [items, total] = await Promise.all([
@@ -68,6 +112,118 @@ export const leadRepository = {
 
     const grouped = await prisma.lead.groupBy({ by: ['status'], where, _count: { _all: true } });
     return grouped.map((g) => ({ status: g.status, count: g._count._all }));
+  },
+
+  // Combined Lead+Opportunity "Lead Journey" breakdown for the Dashboard —
+  // one count + a few recent leads per stage, using the same buildStageWhere()
+  // as list() so the two features agree on what each stage means. Value sums
+  // (only meaningful for the Opportunity-backed stages) come from a separate
+  // groupBy since `value` lives on Opportunity, not Lead.
+  async journeySummary(scopeWhere: { regionId?: string; ownerId?: string }, filters: JourneySummaryQuery) {
+    const { ownerId, dateFrom, dateTo } = filters;
+
+    const leadWhere: Prisma.LeadWhereInput = { ...scopeWhere, deletedAt: null };
+    if (ownerId && !scopeWhere.ownerId) leadWhere.ownerId = ownerId;
+    if (dateFrom || dateTo) {
+      leadWhere.createdAt = {};
+      if (dateFrom) (leadWhere.createdAt as Prisma.DateTimeFilter).gte = dateFrom;
+      if (dateTo) (leadWhere.createdAt as Prisma.DateTimeFilter).lte = dateTo;
+    }
+
+    const oppWhere: Prisma.OpportunityWhereInput = { ...scopeWhere, deletedAt: null };
+    if (ownerId && !scopeWhere.ownerId) oppWhere.ownerId = ownerId;
+    if (dateFrom || dateTo) {
+      oppWhere.createdAt = {};
+      if (dateFrom) (oppWhere.createdAt as Prisma.DateTimeFilter).gte = dateFrom;
+      if (dateTo) (oppWhere.createdAt as Prisma.DateTimeFilter).lte = dateTo;
+    }
+
+    const recentLeadSelect = {
+      id: true,
+      refNo: true,
+      contactName: true,
+      companyName: true,
+      status: true,
+      currentStep: true,
+      updatedAt: true,
+      opportunity: { select: { stage: true } },
+    } satisfies Prisma.LeadSelect;
+
+    const [oppGrouped, ...perStage] = await Promise.all([
+      prisma.opportunity.groupBy({ by: ['stage'], where: oppWhere, _sum: { value: true } }),
+      ...leadStageFilterValues.map((stage) => {
+        const where: Prisma.LeadWhereInput = { ...leadWhere, ...buildStageWhere(stage) };
+        return Promise.all([
+          prisma.lead.count({ where }),
+          prisma.lead.findMany({ where, orderBy: { updatedAt: 'desc' }, take: 7, select: recentLeadSelect }),
+        ]);
+      }),
+    ]);
+
+    const valueByOppStage = new Map(oppGrouped.map((g) => [g.stage, Number(g._sum.value ?? 0)]));
+    const VALUE_SOURCE: Partial<Record<LeadStageFilter, OpportunityStage[]>> = {
+      QUOTATION: ['QUOTATION', 'FOLLOWUP'],
+      MEETING: ['MEETING'],
+      PURCHASE_ORDER: ['PURCHASE_ORDER'],
+      LOST: ['LOST'],
+    };
+
+    const stages = leadStageFilterValues.map((stage, i) => {
+      const [count, recentLeads] = perStage[i];
+      const valueSources = VALUE_SOURCE[stage];
+      const value = valueSources
+        ? valueSources.reduce((sum, s) => sum + (valueByOppStage.get(s) ?? 0), 0)
+        : undefined;
+      return { stage, count, value, recentLeads };
+    });
+
+    // Qualified is a cumulative milestone (overlaps with Quotation/Meeting/PO/Lost
+    // once an opportunity progresses) rather than a mutually-exclusive bucket —
+    // excluded from the funnel total so it isn't double-counted.
+    const total = stages.filter((s) => s.stage !== 'QUALIFIED').reduce((sum, s) => sum + s.count, 0);
+
+    return { stages, total };
+  },
+
+  // Per-owner version of the same 7-stage breakdown, for the Dashboard's
+  // Team performance table. Reuses buildStageWhere() so "status wise" here
+  // means exactly the same 7 stages shown everywhere else in the app.
+  async teamPerformance(scopeWhere: { regionId?: string; ownerId?: string }, filters: TeamPerformanceQuery) {
+    const { dateFrom, dateTo } = filters;
+    const leadWhere: Prisma.LeadWhereInput = { ...scopeWhere, deletedAt: null };
+    if (dateFrom || dateTo) {
+      leadWhere.createdAt = {};
+      if (dateFrom) (leadWhere.createdAt as Prisma.DateTimeFilter).gte = dateFrom;
+      if (dateTo) (leadWhere.createdAt as Prisma.DateTimeFilter).lte = dateTo;
+    }
+
+    const perStage = await Promise.all(
+      leadStageFilterValues.map((stage) =>
+        prisma.lead
+          .groupBy({
+            by: ['ownerId'],
+            where: { ...leadWhere, ...buildStageWhere(stage) },
+            _count: { _all: true },
+          })
+          .then((rows) => ({ stage, rows })),
+      ),
+    );
+
+    const byOwner = new Map<string, Record<LeadStageFilter, number>>();
+    for (const { stage, rows } of perStage) {
+      for (const row of rows) {
+        const counts = byOwner.get(row.ownerId) ?? ({} as Record<LeadStageFilter, number>);
+        counts[stage] = row._count._all;
+        byOwner.set(row.ownerId, counts);
+      }
+    }
+
+    return Array.from(byOwner.entries()).map(([ownerId, counts]) => ({
+      ownerId,
+      counts: Object.fromEntries(
+        leadStageFilterValues.map((stage) => [stage, counts[stage] ?? 0]),
+      ) as Record<LeadStageFilter, number>,
+    }));
   },
 
   findById(id: string) {

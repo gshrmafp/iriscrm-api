@@ -5,7 +5,7 @@ import {
   UnauthorizedError,
 } from "../../../core/errors/AppError";
 import { queryService } from "./service";
-import { ListFollowUpsQuery, ListSalesQueriesQuery, ReportQuery } from "./dto";
+import { DashboardStatsQuery, ListFollowUpsQuery, ListSalesQueriesQuery, ReportQuery } from "./dto";
 import {
   FORWARD,
   REMARK_REQUIRED_STATUSES,
@@ -230,7 +230,8 @@ export const salesQueryController = {
 
   async getDashboard(req: Request, res: Response) {
     if (!req.user) throw new UnauthorizedError();
-    ok(res, await queryService.getDashboard(req.user));
+    const filters = req.query as unknown as DashboardStatsQuery;
+    ok(res, await queryService.getDashboard(req.user, filters));
   },
 
   async runReport(req: Request, res: Response) {

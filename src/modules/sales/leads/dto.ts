@@ -25,6 +25,17 @@ export type AddMeetingInput = z.infer<typeof addMeetingSchema>;
 
 // ---------- Listing with pagination + filters ----------
 
+export const leadStageFilterValues = [
+  'NEW_LEAD',
+  'CONTACTED',
+  'QUALIFIED',
+  'QUOTATION',
+  'MEETING',
+  'PURCHASE_ORDER',
+  'LOST',
+] as const;
+export type LeadStageFilter = (typeof leadStageFilterValues)[number];
+
 export const listLeadsQuerySchema = z.object({
   status: z.nativeEnum(LeadStatus).optional(),
   // Filters by the linked Opportunity's stage instead of the Lead's own
@@ -34,6 +45,10 @@ export const listLeadsQuerySchema = z.object({
   // (a lead with an opportunity is already QUALIFIED), but both are applied
   // if both are sent.
   opportunityStage: z.nativeEnum(OpportunityStage).optional(),
+  // Composite "Lead Journey" stage filter — folds Lead.status/currentStep and
+  // Opportunity.stage into the same 6 stages shown on a lead's own journey
+  // timeline, so the Leads list can filter the way a single lead is displayed.
+  stage: z.enum(leadStageFilterValues).optional(),
   ownerId: z.string().optional(),
   search: z.string().optional(), // matches contactName / companyName / contactPhone / contactEmail
   dateFrom: z.coerce.date().optional(),
@@ -49,6 +64,24 @@ export const leadStatusSummaryQuerySchema = z.object({
   ownerId: z.string().optional(),
 });
 export type LeadStatusSummaryQuery = z.infer<typeof leadStatusSummaryQuerySchema>;
+
+// Combined Lead+Opportunity "Lead Journey" breakdown for the Dashboard —
+// same 7 stages as leadStageFilterValues, each with a count (and, for the
+// Opportunity-backed stages, a value sum) plus a handful of recent leads.
+export const journeySummaryQuerySchema = z.object({
+  ownerId: z.string().optional(),
+  dateFrom: z.coerce.date().optional(),
+  dateTo: z.coerce.date().optional(),
+});
+export type JourneySummaryQuery = z.infer<typeof journeySummaryQuerySchema>;
+
+// Per-owner version of the same 7-stage breakdown, for the Dashboard's Team
+// performance table — no ownerId filter (it returns every owner in scope).
+export const teamPerformanceQuerySchema = z.object({
+  dateFrom: z.coerce.date().optional(),
+  dateTo: z.coerce.date().optional(),
+});
+export type TeamPerformanceQuery = z.infer<typeof teamPerformanceQuerySchema>;
 
 // ---------- Follow-ups aggregate (across leads, for an Activities-style view) ----------
 

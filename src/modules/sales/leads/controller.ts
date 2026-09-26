@@ -3,7 +3,13 @@ import { ok } from '../../../core/http/response';
 import { UnauthorizedError } from '../../../core/errors/AppError';
 import { entityCommentService } from '../../comments/service';
 import { leadService } from './service';
-import { LeadStatusSummaryQuery, ListLeadFollowUpsQuery, ListLeadsQuery } from './dto';
+import {
+  JourneySummaryQuery,
+  LeadStatusSummaryQuery,
+  ListLeadFollowUpsQuery,
+  ListLeadsQuery,
+  TeamPerformanceQuery,
+} from './dto';
 
 export const leadController = {
   async list(req: Request, res: Response) {
@@ -21,6 +27,18 @@ export const leadController = {
     if (!req.user) throw new UnauthorizedError();
     const { ownerId } = req.query as unknown as LeadStatusSummaryQuery;
     ok(res, await leadService.statusSummary(req.user, ownerId));
+  },
+
+  async journeySummary(req: Request, res: Response) {
+    if (!req.user) throw new UnauthorizedError();
+    const filters = req.query as unknown as JourneySummaryQuery;
+    ok(res, await leadService.journeySummary(req.user, filters));
+  },
+
+  async teamPerformance(req: Request, res: Response) {
+    if (!req.user) throw new UnauthorizedError();
+    const filters = req.query as unknown as TeamPerformanceQuery;
+    ok(res, await leadService.teamPerformance(req.user, filters));
   },
 
   async listFollowUps(req: Request, res: Response) {

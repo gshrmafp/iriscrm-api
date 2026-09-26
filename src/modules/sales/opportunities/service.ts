@@ -8,7 +8,14 @@ import { quotationService } from '../quotations/service';
 import { registerCommentEntityAccessCheck } from '../../comments/service';
 import { opportunityRepository } from './repository';
 import { isValidTransition } from './pipeline';
-import { CreateOpportunityInput, ListOpportunitiesQuery, ReassignInput, TransitionStageInput, WinInput } from './dto';
+import {
+  CreateOpportunityInput,
+  ListOpportunitiesQuery,
+  PipelineSummaryQuery,
+  ReassignInput,
+  TransitionStageInput,
+  WinInput,
+} from './dto';
 
 function canManageAllOpportunities(role: Role) {
   return role === Role.SUPER_ADMIN || role === Role.REGIONAL_ADMIN || role === Role.SALES_MANAGER;
@@ -57,8 +64,8 @@ export const opportunityService = {
     return opportunityRepository.list(this.buildScopeWhere(actor), filters);
   },
 
-  async getPipelineSummary(actor: AuthUser, ownerId?: string) {
-    return opportunityRepository.getPipelineSummary(this.buildScopeWhere(actor), ownerId);
+  async getPipelineSummary(actor: AuthUser, filters: PipelineSummaryQuery) {
+    return opportunityRepository.getPipelineSummary(this.buildScopeWhere(actor), filters);
   },
 
   async get(id: string, actor: AuthUser) {

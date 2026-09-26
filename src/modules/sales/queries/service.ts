@@ -19,6 +19,7 @@ import {
   CreateCommentInput,
   CreateFollowUpInput,
   CreateSalesQueryInput,
+  DashboardStatsQuery,
   ListFollowUpsQuery,
   ListSalesQueriesQuery,
   ReassignOwnerInput,
@@ -603,13 +604,14 @@ export const queryService = {
   },
 
   // ---------- Dashboard ----------
-  async getDashboard(actor: AuthUser) {
+  async getDashboard(actor: AuthUser, filters: DashboardStatsQuery = {}) {
     const whereBase = await this.buildListWhere(actor, {} as any);
     return queryRepository.getDashboardStats(
       actor.id,
       actor.role,
       actor.regionId,
       whereBase,
+      filters,
     );
   },
 

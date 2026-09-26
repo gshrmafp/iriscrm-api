@@ -180,6 +180,14 @@ export const listFollowUpsQuerySchema = z.object({
 });
 export type ListFollowUpsQuery = z.infer<typeof listFollowUpsQuerySchema>;
 
+// ---------- Dashboard ----------
+
+export const dashboardStatsQuerySchema = z.object({
+  fromDate: z.coerce.date().optional(),
+  toDate: z.coerce.date().optional(),
+});
+export type DashboardStatsQuery = z.infer<typeof dashboardStatsQuerySchema>;
+
 // ---------- Reports ----------
 
 export const reportQuerySchema = z.object({

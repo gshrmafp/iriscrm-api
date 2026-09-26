@@ -12,11 +12,13 @@ import { leadRepository } from './repository';
 import {
   AddFollowUpInput,
   AddMeetingInput,
+  JourneySummaryQuery,
   ListLeadFollowUpsQuery,
   ListLeadsQuery,
   SaveStep1Input,
   SaveStep2Input,
   SaveStep3Input,
+  TeamPerformanceQuery,
 } from './dto';
 
 // Never-regress stage ranking for the auto-advance side effect: logging a
@@ -84,6 +86,16 @@ export const leadService = {
   // "how many leads has this rep worked, and what's their status" admin view.
   async statusSummary(actor: AuthUser, ownerId?: string) {
     return leadRepository.statusSummary(buildLeadScopeWhere(actor), ownerId);
+  },
+
+  // Combined Lead+Opportunity 7-stage breakdown (with recent leads per
+  // stage) powering the Dashboard's sidebar.
+  async journeySummary(actor: AuthUser, filters: JourneySummaryQuery) {
+    return leadRepository.journeySummary(buildLeadScopeWhere(actor), filters);
+  },
+
+  async teamPerformance(actor: AuthUser, filters: TeamPerformanceQuery) {
+    return leadRepository.teamPerformance(buildLeadScopeWhere(actor), filters);
   },
 
   async get(id: string, actor: AuthUser) {

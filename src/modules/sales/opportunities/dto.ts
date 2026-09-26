@@ -65,5 +65,7 @@ export type ListOpportunitiesQuery = z.infer<typeof listOpportunitiesQuerySchema
 
 export const pipelineSummaryQuerySchema = z.object({
   ownerId: z.string().optional(),
+  dateFrom: z.coerce.date().optional(),
+  dateTo: z.coerce.date().optional(),
 });
 export type PipelineSummaryQuery = z.infer<typeof pipelineSummaryQuerySchema>;

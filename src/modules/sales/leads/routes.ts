@@ -9,12 +9,14 @@ import { leadController } from './controller';
 import {
   addFollowUpSchema,
   addMeetingSchema,
+  journeySummaryQuerySchema,
   leadStatusSummaryQuerySchema,
   listLeadFollowUpsQuerySchema,
   listLeadsQuerySchema,
   saveStep1Schema,
   saveStep2Schema,
   saveStep3Schema,
+  teamPerformanceQuerySchema,
 } from './dto';
 
 export const leadRouter = Router();
@@ -198,6 +200,61 @@ leadRouter.get(
   requirePermission(PERMISSIONS.SALES_LEAD_VIEW),
   validateQuery(leadStatusSummaryQuerySchema),
   asyncHandler(leadController.statusSummary),
+);
+
+/**
+ * @openapi
+ * /leads/journey-summary:
+ *   get:
+ *     summary: Combined Lead+Opportunity 7-stage breakdown (count + recent leads per stage) for the Dashboard, optionally narrowed by owner and date range
+ *     tags: [Leads]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: ownerId
+ *         schema: { type: string }
+ *       - in: query
+ *         name: dateFrom
+ *         schema: { type: string, format: date-time }
+ *       - in: query
+ *         name: dateTo
+ *         schema: { type: string, format: date-time }
+ *     responses:
+ *       200:
+ *         description: "{ stages: [{ stage, count, value?, recentLeads }], total }"
+ */
+leadRouter.get(
+  '/leads/journey-summary',
+  requireAuth,
+  requirePermission(PERMISSIONS.SALES_LEAD_VIEW),
+  validateQuery(journeySummaryQuerySchema),
+  asyncHandler(leadController.journeySummary),
+);
+
+/**
+ * @openapi
+ * /leads/team-performance:
+ *   get:
+ *     summary: Per-owner 7-stage lead breakdown visible to the caller, for the Dashboard's Team performance table
+ *     tags: [Leads]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: dateFrom
+ *         schema: { type: string, format: date-time }
+ *       - in: query
+ *         name: dateTo
+ *         schema: { type: string, format: date-time }
+ *     responses:
+ *       200:
+ *         description: "Array of { ownerId, counts: { NEW_LEAD, CONTACTED, QUALIFIED, QUOTATION, MEETING, PURCHASE_ORDER, LOST } }"
+ */
+leadRouter.get(
+  '/leads/team-performance',
+  requireAuth,
+  requirePermission(PERMISSIONS.SALES_LEAD_VIEW),
+  validateQuery(teamPerformanceQuerySchema),
+  asyncHandler(leadController.teamPerformance),
 );
 
 /**

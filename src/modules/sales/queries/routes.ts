@@ -12,6 +12,7 @@ import {
   createCommentSchema,
   createFollowUpSchema,
   createSalesQuerySchema,
+  dashboardStatsQuerySchema,
   listFollowUpsQuerySchema,
   listSalesQueriesQuerySchema,
   pinCommentSchema,
@@ -32,6 +33,7 @@ salesQueryRouter.get(
   '/sales-queries/dashboard/stats',
   requireAuth,
   requirePermission(PERMISSIONS.SALES_DASHBOARD_VIEW),
+  validateQuery(dashboardStatsQuerySchema),
   asyncHandler(salesQueryController.getDashboard),
 );
 
