@@ -90,6 +90,12 @@ export const identityController = {
     ok(res, user);
   },
 
+  async resetUserPassword(req: Request, res: Response) {
+    if (!req.user) throw new UnauthorizedError();
+    const result = await identityService.resetUserPassword(req.user, req.params.id, req.body);
+    ok(res, result);
+  },
+
   async getUser(req: Request, res: Response) {
     if (!req.user) throw new UnauthorizedError();
     const user = await identityService.getUser(req.user, req.params.id);

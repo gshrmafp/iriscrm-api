@@ -15,6 +15,7 @@ import {
   ListUsersQuery,
   LoginInput,
   PermissionOverrideInput,
+  ResetUserPasswordInput,
   UpdateMyProfileInput,
   UpdateRegionInput,
   UpdateUserInput,
@@ -201,6 +202,25 @@ export const identityService = {
     const updated = await identityRepository.updateUserStatus(targetUserId, input.status);
     const { passwordHash: _omit, ...safeUser } = updated;
     return safeUser;
+  },
+
+  // Super Admin sets a new password for another user. Passwords are argon2
+  // hashed, so the existing one can never be read back — this only overwrites
+  // it. Self is excluded so changing your own password still goes through
+  // /auth/change-password and its current-password check.
+  async resetUserPassword(actor: AuthUser, targetUserId: string, input: ResetUserPasswordInput) {
+    if (actor.role !== Role.SUPER_ADMIN) {
+      throw new ForbiddenError('Only a Super Admin can reset another user\'s password');
+    }
+    if (targetUserId === actor.id) {
+      throw new ForbiddenError('Use change password to update your own password');
+    }
+    const target = await identityRepository.findUserById(targetUserId);
+    if (!target) throw new NotFoundError('User not found');
+
+    const newHash = await argon2.hash(input.newPassword);
+    await identityRepository.updateUserPassword(targetUserId, newHash);
+    return { message: 'Password updated successfully' };
   },
 
   // Regional Admin may only view users within their own region; Super Admin

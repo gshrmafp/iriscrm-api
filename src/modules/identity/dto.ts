@@ -76,6 +76,13 @@ export const changePasswordSchema = z.object({
 });
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 
+// Super Admin sets a new password for another user. Same 8-char minimum as
+// createUserSchema; no currentPassword since the admin never knows it.
+export const resetUserPasswordSchema = z.object({
+  newPassword: z.string().min(8, 'Password must be at least 8 characters'),
+});
+export type ResetUserPasswordInput = z.infer<typeof resetUserPasswordSchema>;
+
 // ---------- Listing with pagination + filters ----------
 
 export const listUsersQuerySchema = z.object({

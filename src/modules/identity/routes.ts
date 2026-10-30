@@ -7,6 +7,7 @@ import { PERMISSIONS } from '../../config/permissions';
 import { identityController } from './controller';
 import {
   changePasswordSchema,
+  resetUserPasswordSchema,
   createRegionSchema,
   createUserSchema,
   listUsersQuerySchema,
@@ -396,6 +397,39 @@ identityRouter.patch(
   requirePermission(PERMISSIONS.IDENTITY_USER_MANAGE),
   validateBody(updateUserStatusSchema),
   asyncHandler(identityController.updateUserStatus),
+);
+
+/**
+ * @openapi
+ * /users/{id}/password:
+ *   post:
+ *     summary: Set a new password for another user (Super Admin only). The existing password is never readable — it is stored hashed.
+ *     tags: [Identity]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [newPassword]
+ *             properties:
+ *               newPassword: { type: string, minLength: 8 }
+ *     responses:
+ *       200: { description: OK }
+ *       403: { description: Caller is not a Super Admin, or targeted their own account }
+ */
+identityRouter.post(
+  '/users/:id/password',
+  requireAuth,
+  requirePermission(PERMISSIONS.IDENTITY_USER_MANAGE),
+  validateBody(resetUserPasswordSchema),
+  asyncHandler(identityController.resetUserPassword),
 );
 
 /**
