@@ -147,6 +147,19 @@ identityRouter.patch(
 
 /**
  * @openapi
+ * /auth/me/permissions:
+ *   get:
+ *     summary: The caller's own effective permission keys (role defaults plus overrides) — drives permission-aware navigation
+ *     tags: [Identity]
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200:
+ *         description: "Array of permission keys"
+ */
+identityRouter.get('/auth/me/permissions', requireAuth, asyncHandler(identityController.getMyPermissions));
+
+/**
+ * @openapi
  * /auth/change-password:
  *   post:
  *     summary: Change the current user's password
@@ -213,7 +226,7 @@ identityRouter.post('/auth/refresh', validateBody(refreshSchema), asyncHandler(i
  *               password: { type: string, example: "Password123!" }
  *               role:
  *                 type: string
- *                 enum: [SUPER_ADMIN, REGIONAL_ADMIN, SALES_MANAGER, SALES_EXECUTIVE, AUDITOR]
+ *                 enum: [SUPER_ADMIN, REGIONAL_ADMIN, SALES_MANAGER, SALES_EXECUTIVE, AUDITOR, HR_ADMIN]
  *                 example: "SALES_EXECUTIVE"
  *               regionId: { type: string }
  *               reportingToId: { type: string }
@@ -238,7 +251,7 @@ identityRouter.post('/auth/refresh', validateBody(refreshSchema), asyncHandler(i
  *         schema: { type: string, enum: [asc, desc], default: desc }
  *       - in: query
  *         name: role
- *         schema: { type: string, enum: [SUPER_ADMIN, REGIONAL_ADMIN, SALES_MANAGER, SALES_EXECUTIVE, AUDITOR] }
+ *         schema: { type: string, enum: [SUPER_ADMIN, REGIONAL_ADMIN, SALES_MANAGER, SALES_EXECUTIVE, AUDITOR, HR_ADMIN] }
  *       - in: query
  *         name: regionId
  *         schema: { type: string }
@@ -466,7 +479,7 @@ identityRouter.post(
  *               email: { type: string }
  *               role:
  *                 type: string
- *                 enum: [SUPER_ADMIN, REGIONAL_ADMIN, SALES_MANAGER, SALES_EXECUTIVE, AUDITOR]
+ *                 enum: [SUPER_ADMIN, REGIONAL_ADMIN, SALES_MANAGER, SALES_EXECUTIVE, AUDITOR, HR_ADMIN]
  *               regionId: { type: string }
  *               reportingToId: { type: string, nullable: true }
  *     responses:

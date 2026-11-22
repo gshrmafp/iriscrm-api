@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { ok } from '../../core/http/response';
 import { UnauthorizedError } from '../../core/errors/AppError';
+import { getEffectivePermissions } from '../../core/rbac/effectivePermissions';
 import { identityService } from './service';
 import { ListUsersQuery } from './dto';
 
@@ -14,6 +15,12 @@ export const identityController = {
     if (!req.user) throw new UnauthorizedError();
     const user = await identityService.getMe(req.user.id);
     ok(res, user);
+  },
+
+  async getMyPermissions(req: Request, res: Response) {
+    if (!req.user) throw new UnauthorizedError();
+    const effective = await getEffectivePermissions(req.user.id, req.user.role);
+    ok(res, [...effective].sort());
   },
 
   async updateMe(req: Request, res: Response) {

@@ -1,6 +1,7 @@
 import { Role } from '@prisma/client';
 import { AuthUser } from '../../core/middleware/types';
-import { BadRequestError, ForbiddenError, NotFoundError } from '../../core/errors/AppError';
+import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../core/errors/AppError';
+import { prisma } from '../../core/db/prisma';
 import { CROSS_REGION_ROLES } from '../../config/permissions';
 import { departmentRepository } from './repository';
 import { AddMemberInput, CreateDepartmentInput, UpdateDepartmentInput } from './dto';
@@ -15,7 +16,10 @@ export const departmentService = {
   // Admin+ only (route-gated by DEPARTMENT_MANAGE). Omitting regionId creates a
   // cross-region/shared department (e.g. Accounts HQ) — only a Super Admin may
   // do that; a Regional Admin always creates within their own region.
-  create(actor: AuthUser, input: CreateDepartmentInput) {
+  async create(actor: AuthUser, input: CreateDepartmentInput) {
+    // Codes are globally unique; say so instead of surfacing a DB error.
+    const clash = await prisma.department.findUnique({ where: { code: input.code } });
+    if (clash) throw new ConflictError('A department with this code already exists');
     if (!input.regionId) {
       if (!CROSS_REGION_ROLES.includes(actor.role)) {
         return departmentRepository.create({ ...input, regionId: actor.regionId });

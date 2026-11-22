@@ -53,9 +53,45 @@ export const PERMISSIONS = {
   NOTIFICATION_VIEW: "notification.view",
 
   PICKLIST_MANAGE: "picklist.manage",
+
+  // HRMS. Record visibility is narrowed further by hrScope() — e.g. every role
+  // has hr.employee.view, but a plain employee only ever sees their own record.
+  HR_DASHBOARD_VIEW: "hr.dashboard.view",
+  HR_EMPLOYEE_VIEW: "hr.employee.view",
+  HR_EMPLOYEE_MANAGE: "hr.employee.manage",
+  HR_EMPLOYEE_SENSITIVE_VIEW: "hr.employee.sensitive.view",
+  HR_ORG_MANAGE: "hr.org.manage",
+  HR_ATTENDANCE_SELF: "hr.attendance.self",
+  HR_ATTENDANCE_TEAM: "hr.attendance.team",
+  HR_ATTENDANCE_MANAGE: "hr.attendance.manage",
+  HR_SHIFT_MANAGE: "hr.shift.manage",
+  HR_LEAVE_APPLY: "hr.leave.apply",
+  HR_LEAVE_APPROVE: "hr.leave.approve",
+  HR_LEAVE_MANAGE: "hr.leave.manage",
+  HR_HOLIDAY_MANAGE: "hr.holiday.manage",
+  HR_APPROVAL_ACT: "hr.approval.act",
+  HR_SETTINGS_MANAGE: "hr.settings.manage",
 } as const;
 
 export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
+
+// Every employee's own HR self-service: own profile, own attendance, leave,
+// and acting on approvals routed to them.
+const HR_SELF_SERVICE: PermissionKey[] = [
+  PERMISSIONS.HR_EMPLOYEE_VIEW,
+  PERMISSIONS.HR_ATTENDANCE_SELF,
+  PERMISSIONS.HR_LEAVE_APPLY,
+  PERMISSIONS.HR_APPROVAL_ACT,
+];
+
+// People managers additionally see and approve for their reporting tree.
+const HR_TEAM_MANAGER: PermissionKey[] = [
+  ...HR_SELF_SERVICE,
+  PERMISSIONS.HR_ATTENDANCE_TEAM,
+  PERMISSIONS.HR_LEAVE_APPROVE,
+];
+
+const HR_ALL: PermissionKey[] = Object.values(PERMISSIONS).filter((key) => key.startsWith("hr."));
 
 /**
  * Default permission set per role, seeded into RolePermission (Section 3.2 matrix).
@@ -104,6 +140,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<Role, PermissionKey[]> = {
     PERMISSIONS.DEPARTMENT_MANAGE,
     PERMISSIONS.NOTIFICATION_VIEW,
     PERMISSIONS.PICKLIST_MANAGE,
+    ...HR_TEAM_MANAGER,
+    PERMISSIONS.HR_DASHBOARD_VIEW,
   ],
   [Role.SALES_MANAGER]: [
     PERMISSIONS.SALES_CATALOG_VIEW,
@@ -137,6 +175,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<Role, PermissionKey[]> = {
     PERMISSIONS.SALES_QUERY_FOLLOWUP_MANAGE,
     PERMISSIONS.SALES_DASHBOARD_VIEW,
     PERMISSIONS.NOTIFICATION_VIEW,
+    ...HR_TEAM_MANAGER,
   ],
   [Role.SALES_EXECUTIVE]: [
     PERMISSIONS.SALES_CATALOG_VIEW,
@@ -164,6 +203,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<Role, PermissionKey[]> = {
     PERMISSIONS.SALES_QUERY_FOLLOWUP_MANAGE,
     PERMISSIONS.SALES_DASHBOARD_VIEW,
     PERMISSIONS.NOTIFICATION_VIEW,
+    ...HR_SELF_SERVICE,
   ],
   [Role.AUDITOR]: [
     PERMISSIONS.SALES_CATALOG_VIEW,
@@ -177,6 +217,12 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<Role, PermissionKey[]> = {
     PERMISSIONS.SALES_QUERY_VIEW,
     PERMISSIONS.SALES_QUERY_FOLLOWUP_VIEW,
     PERMISSIONS.SALES_DASHBOARD_VIEW,
+    PERMISSIONS.NOTIFICATION_VIEW,
+    ...HR_SELF_SERVICE,
+  ],
+  [Role.HR_ADMIN]: [
+    ...HR_ALL,
+    PERMISSIONS.DEPARTMENT_MANAGE,
     PERMISSIONS.NOTIFICATION_VIEW,
   ],
 };
@@ -196,4 +242,5 @@ export const APPROVAL_LIMITS: Record<
   [Role.REGIONAL_ADMIN]: { maxValue: 5_000_000, maxDiscountPct: 25 },
   [Role.SUPER_ADMIN]: null, // unlimited
   [Role.AUDITOR]: null, // never approves
+  [Role.HR_ADMIN]: null, // not part of the sales quotation chain
 };

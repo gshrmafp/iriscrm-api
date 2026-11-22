@@ -15,6 +15,11 @@ const envSchema = z.object({
   S3_ACCESS_KEY_ID: z.string().optional().default(''),
   S3_SECRET_ACCESS_KEY: z.string().optional().default(''),
   UPLOADS_DIR: z.string().default('./uploads'),
+  // Encrypts HR statutory fields (bank account, PAN, Aadhaar, UAN...). Required
+  // in production; dev/test fall back to a fixed local key (see hrms/_shared/crypto.ts).
+  HR_ENCRYPTION_KEY: z.string().min(32).optional(),
+  // Timezone that defines an attendance "work date".
+  HR_TIMEZONE: z.string().default('Asia/Kolkata'),
 });
 
 const parsed = envSchema.safeParse(process.env);

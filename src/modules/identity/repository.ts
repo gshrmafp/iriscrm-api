@@ -28,6 +28,8 @@ export const identityRepository = {
         role: input.role,
         regionId: input.regionId,
         reportingToId: input.reportingToId,
+        // Every user is also an employee (HRMS links them 1:1).
+        employee: { create: { joiningDate: new Date() } },
       },
     });
   },

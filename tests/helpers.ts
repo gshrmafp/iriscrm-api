@@ -33,7 +33,7 @@ export async function createTestUser(role: Role, regionId: string, emailPrefix =
   const passwordHash = await argon2.hash(password);
   const id = await generateId('USER');
   const user = await prisma.user.create({
-    data: { id, name: emailPrefix, email, passwordHash, role, regionId },
+    data: { id, name: emailPrefix, email, passwordHash, role, regionId, employee: { create: {} } },
   });
   return { user, password };
 }

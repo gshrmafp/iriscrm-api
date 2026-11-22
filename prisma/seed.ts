@@ -1007,6 +1007,38 @@ async function main() {
   // --- Large-scale randomized dataset (dashboards, pagination, reports) ----
   await seedBulkData({ ggn: { id: ggn.id, code: ggn.code }, dl: { id: dl.id, code: dl.code } });
 
+  // --- HRMS: designations, an HR Admin, and one Employee per User ------------
+  const designations = [
+    { code: 'MD', name: 'Managing Director', level: 1 },
+    { code: 'RM', name: 'Regional Manager', level: 2 },
+    { code: 'HRM', name: 'HR Manager', level: 3 },
+    { code: 'SM', name: 'Sales Manager', level: 3 },
+    { code: 'SE', name: 'Sales Executive', level: 4 },
+    { code: 'AUD', name: 'Auditor', level: 4 },
+  ];
+  for (const designation of designations) {
+    await prisma.designation.upsert({ where: { code: designation.code }, update: {}, create: designation });
+  }
+  await upsertUser({ name: 'Meera HR Admin', email: 'meera.hr@iris.local', role: Role.HR_ADMIN, regionId: ggn.id });
+
+  const designationIdByCode = new Map(
+    (await prisma.designation.findMany({ select: { id: true, code: true } })).map((d) => [d.code, d.id]),
+  );
+  const roleDesignation: Record<Role, string> = {
+    [Role.SUPER_ADMIN]: 'MD',
+    [Role.REGIONAL_ADMIN]: 'RM',
+    [Role.HR_ADMIN]: 'HRM',
+    [Role.SALES_MANAGER]: 'SM',
+    [Role.SALES_EXECUTIVE]: 'SE',
+    [Role.AUDITOR]: 'AUD',
+  };
+  const usersWithoutEmployee = await prisma.user.findMany({ where: { employee: null }, select: { id: true, role: true, createdAt: true } });
+  for (const user of usersWithoutEmployee) {
+    await prisma.employee.create({
+      data: { userId: user.id, joiningDate: user.createdAt, designationId: designationIdByCode.get(roleDesignation[user.role]) },
+    });
+  }
+
   console.log('\nSeeded regions: GGN (Gurugram), DL (Delhi), plus 8 more (see bulk log above)');
   console.log('\nLogins (password shown once per role):');
   console.log(`  Super Admin      superadmin@iris.local     / ${superAdminPassword}`);
@@ -1014,6 +1046,7 @@ async function main() {
   console.log(`  Sales Manager    vikram.manager@iris.local / ${SAMPLE_PASSWORD}  (GGN)`);
   console.log(`  Sales Executive  rahul.exec@iris.local     / ${SAMPLE_PASSWORD}  (GGN)`);
   console.log(`  Auditor          anita.auditor@iris.local  / ${SAMPLE_PASSWORD}  (GGN)`);
+  console.log(`  HR Admin         meera.hr@iris.local       / ${SAMPLE_PASSWORD}  (GGN)`);
   console.log(`  Regional Admin   sanjay.admin@iris.local   / ${SAMPLE_PASSWORD}  (DL)`);
   console.log(`  Sales Executive  neha.exec@iris.local      / ${SAMPLE_PASSWORD}  (DL)`);
   console.log(`\n  All bulk-generated users also share the password: ${SAMPLE_PASSWORD}`);

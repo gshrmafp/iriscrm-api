@@ -20,6 +20,7 @@ enum Role {
   SALES_MANAGER
   SALES_EXECUTIVE
   AUDITOR
+  HR_ADMIN
 }
 
 enum UserStatus {
@@ -83,6 +84,10 @@ model User {
   queryActivities       QueryActivity[]
   notifications         Notification[]
   entityComments        EntityComment[]
+
+  // HRMS — HR data lives on Employee, linked 1:1. The User row stays the
+  // source of truth for login, role, region and reporting manager.
+  employee Employee?
 
   @@index([regionId])
   @@map("users")
@@ -549,6 +554,7 @@ model Department {
 
   members      DepartmentMember[]
   salesQueries SalesQuery[]
+  employees    Employee[]
 
   @@index([regionId])
   @@map("departments")
@@ -903,4 +909,219 @@ model Sequence {
   nextValue Int    @default(1)
 
   @@map("sequences")
+}
+
+// ---------------------------------------------------------------------------
+// HRMS — Phase 1: employee records
+// Org model: Company (single, implicit) → Branch (Region) → Department → Employee.
+// ---------------------------------------------------------------------------
+
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+  INTERN
+  CONSULTANT
+}
+
+enum EmployeeLifecycleStatus {
+  ONBOARDING
+  PROBATION
+  CONFIRMED
+  NOTICE
+  EXITED
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+  UNDISCLOSED
+}
+
+enum HrDocumentCategory {
+  RESUME
+  OFFER_LETTER
+  APPOINTMENT_LETTER
+  ID_PROOF
+  ADDRESS_PROOF
+  EDUCATION
+  EXPERIENCE
+  POLICY
+  OTHER
+}
+
+model Designation {
+  id        String   @id @default(cuid())
+  code      String   @unique // e.g. SE, SM, HRBP
+  name      String
+  level     Int? // optional seniority level for org charts
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  employees Employee[]
+
+  @@map("designations")
+}
+
+// One row per User. Employee code = User.id (EMP###), so it is never duplicated.
+model Employee {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Personal
+  phone                 String?
+  personalEmail         String?
+  dateOfBirth           DateTime? @db.Date
+  gender                Gender?
+  currentAddress        String?
+  permanentAddress      String?
+  emergencyContactName  String?
+  emergencyContactPhone String?
+  emergencyContactRel   String?
+  photoStorageKey       String?
+
+  // Employment
+  designationId     String?
+  designation       Designation?            @relation(fields: [designationId], references: [id])
+  departmentId      String?
+  department        Department?             @relation(fields: [departmentId], references: [id])
+  employmentType    EmploymentType          @default(FULL_TIME)
+  lifecycleStatus   EmployeeLifecycleStatus @default(CONFIRMED)
+  joiningDate       DateTime?               @db.Date
+  probationStartsOn DateTime?               @db.Date
+  probationEndsOn   DateTime?               @db.Date
+  confirmedOn       DateTime?               @db.Date
+  noticePeriodDays  Int?
+  exitDate          DateTime?               @db.Date
+  workLocation      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  statutory       EmployeeStatutory?
+  lifecycleEvents EmployeeLifecycleEvent[]
+  documents       HrDocument[]
+  onboardingTasks OnboardingTask[]
+
+  @@index([departmentId])
+  @@index([designationId])
+  @@index([lifecycleStatus])
+  @@map("employees")
+}
+
+// Sensitive identifiers. Every *Enc column holds AES-256-GCM ciphertext
+// (see src/modules/hrms/_shared/crypto.ts) — never plaintext.
+model EmployeeStatutory {
+  id         String   @id @default(cuid())
+  employeeId String   @unique
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  bankName       String?
+  bankAccountEnc String?
+  ifsc           String?
+  panEnc         String?
+  aadhaarEnc     String?
+  uanEnc         String?
+  pfNumberEnc    String?
+  esiNumberEnc   String?
+  updatedById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("employee_statutory")
+}
+
+// Append-only employment history: lifecycle transitions, transfers, manager
+// and designation changes. Never updated or deleted.
+model EmployeeLifecycleEvent {
+  id            String   @id @default(cuid())
+  employeeId    String
+  employee      Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  eventType     String // STATUS_CHANGE | DEPARTMENT_CHANGE | DESIGNATION_CHANGE | MANAGER_CHANGE | REGION_CHANGE | JOINED
+  fromValue     String?
+  toValue       String?
+  effectiveDate DateTime @db.Date
+  note          String?
+  actorId       String
+  createdAt     DateTime @default(now())
+
+  @@index([employeeId, createdAt])
+  @@map("employee_lifecycle_events")
+}
+
+model HrDocument {
+  id           String             @id @default(cuid())
+  employeeId   String
+  employee     Employee           @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  category     HrDocumentCategory
+  title        String
+  fileName     String
+  mimeType     String
+  sizeBytes    Int
+  storageKey   String
+  uploadedById String
+  verifiedById String?
+  verifiedAt   DateTime?
+  createdAt    DateTime           @default(now())
+  deletedAt    DateTime?
+
+  @@index([employeeId])
+  @@map("hr_documents")
+}
+
+// ── HRMS: onboarding ─────────────────────────────────────────────────────────
+
+enum OnboardingTaskOwner {
+  HR
+  MANAGER
+  EMPLOYEE
+}
+
+// Reusable checklist HR applies when onboarding someone. Tasks are copied
+// onto the employee at onboarding time, so editing a template never changes
+// checklists already in progress.
+model OnboardingTemplate {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tasks OnboardingTemplateTask[]
+
+  @@map("onboarding_templates")
+}
+
+model OnboardingTemplateTask {
+  id            String              @id @default(cuid())
+  templateId    String
+  template      OnboardingTemplate  @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  title         String
+  description   String?
+  owner         OnboardingTaskOwner @default(HR)
+  dueOffsetDays Int                 @default(0) // relative to the joining date; negative = before joining
+  sortOrder     Int                 @default(0)
+
+  @@index([templateId])
+  @@map("onboarding_template_tasks")
+}
+
+model OnboardingTask {
+  id          String              @id @default(cuid())
+  employeeId  String
+  employee    Employee            @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  owner       OnboardingTaskOwner @default(HR)
+  dueDate     DateTime?           @db.Date
+  sortOrder   Int                 @default(0)
+  doneAt      DateTime?
+  doneById    String?
+  createdAt   DateTime            @default(now())
+
+  @@index([employeeId])
+  @@map("onboarding_tasks")
 }
